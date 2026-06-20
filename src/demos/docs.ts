@@ -18,6 +18,8 @@ const state = {
   volume: 0.5,
   brightness: 0.7,
   modalOpen: false,
+  name: "",
+  email: "",
 };
 
 let _canvasW = 0;
@@ -652,6 +654,36 @@ export function tick(ctx: CanvasRenderingContext2D, _dt: number) {
               });
             },
           );
+        },
+      );
+
+      section(
+        "Text input",
+        "ui.textInput(value, opts) returns the updated value. Click to focus, type, use arrows / Home / End / Backspace / Delete. Enter or Escape blurs.",
+        [
+          "state.name = ui.textInput(state.name, {",
+          '  id: "name",',
+          '  placeholder: "Your name",',
+          '  width: "grow",',
+          "}).value;",
+        ],
+        () => {
+          state.name = ui.textInput(state.name, {
+            id: "doc-name",
+            placeholder: "Your name",
+            width: "grow",
+          }).value;
+          state.email = ui.textInput(state.email, {
+            id: "doc-email",
+            placeholder: "you@example.com",
+            width: "grow",
+          }).value;
+          ui.withTextColor(MUTED, () => {
+            ui.withFont("12px ui-monospace, monospace", () => {
+              ui.label(`name = ${JSON.stringify(state.name)}`);
+              ui.label(`email = ${JSON.stringify(state.email)}`);
+            });
+          });
         },
       );
 

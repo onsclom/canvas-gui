@@ -1,4 +1,4 @@
-import { mouse } from "./input";
+import { keysJustPressed, mouse } from "./input";
 
 const FONT = "14px system-ui, sans-serif";
 const BG = "#374151";
@@ -71,6 +71,7 @@ export type NodeOpts = {
   wrap?: boolean;
   fillBar?: number; // 0..1
   cursor?: string;  // CSS cursor when hovered; defaults to "pointer" for clickable
+  caretAt?: number; // draw a blinking text caret at this character index
 };
 
 export type ContainerOpts = NodeOpts;
@@ -101,6 +102,7 @@ type Node = {
   wrappedLines?: string[];
   fillBar?: number;
   cursor?: string;
+  caretAt?: number;
   intrinsicW: number;
   intrinsicH: number;
   children: Node[];
@@ -126,6 +128,8 @@ type WidgetState = {
   winY: number;
   winW: number;
   winH: number;
+  // text-input caret position
+  caret: number;
   lastTouched: number;
 };
 
@@ -249,6 +253,7 @@ function getState(id: string): WidgetState {
       winY: 0,
       winW: 0,
       winH: 0,
+      caret: 0,
       lastTouched: frameIdx,
     };
     cache.set(id, s);
@@ -425,6 +430,7 @@ function makeNode(opts: NodeOpts): Node {
     wrap: !!opts.wrap,
     fillBar: opts.fillBar,
     cursor: opts.cursor ?? (opts.clickable ? "pointer" : undefined),
+    caretAt: opts.caretAt,
     intrinsicW,
     intrinsicH,
     children: [],
@@ -465,6 +471,107 @@ export function row(opts: NodeOpts, fn: () => void): Comm {
 }
 export function col(opts: NodeOpts, fn: () => void): Comm {
   return node({ ...opts, dir: "col" }, fn);
+}
+
+// Single-line text input. Click to focus, type. Backspace, arrows, Home,
+// End move the caret. Enter/Escape blur. Returned value reflects the
+// buffer this frame.
+export type TextInputComm = Comm & { value: string };
+
+let focusedInput: string | null = null;
+
+export function textInput(
+  value: string,
+  opts: NodeOpts & { placeholder?: string } = {},
+): TextInputComm {
+  const id = opts.id ?? "text-input";
+  const s = getState(id);
+  const isFocused = focusedInput === id;
+  let next = value;
+  const font = opts.font ?? top(fontStack) ?? FONT;
+
+  // process keyboard input while focused
+  if (isFocused) {
+    for (const k of keysJustPressed) {
+      if (k === "Backspace") {
+        if (s.caret > 0) {
+          next = next.slice(0, s.caret - 1) + next.slice(s.caret);
+          s.caret--;
+        }
+      } else if (k === "Delete") {
+        if (s.caret < next.length) {
+          next = next.slice(0, s.caret) + next.slice(s.caret + 1);
+        }
+      } else if (k === "ArrowLeft") {
+        s.caret = Math.max(0, s.caret - 1);
+      } else if (k === "ArrowRight") {
+        s.caret = Math.min(next.length, s.caret + 1);
+      } else if (k === "Home") {
+        s.caret = 0;
+      } else if (k === "End") {
+        s.caret = next.length;
+      } else if (k === "Enter" || k === "Escape") {
+        focusedInput = null;
+      } else if (k.length === 1) {
+        next = next.slice(0, s.caret) + k + next.slice(s.caret);
+        s.caret++;
+      }
+    }
+  }
+
+  const empty = next.length === 0;
+  const showPlaceholder = empty && !!opts.placeholder;
+  const display = empty ? (opts.placeholder ?? "") : next;
+  const textColor = empty
+    ? "#6b7280"
+    : opts.textColor;
+
+  const c = node({
+    padding: { l: 10, r: 10, t: 7, b: 7 },
+    height: 32,
+    ...opts,
+    id,
+    clickable: true,
+    cursor: opts.cursor ?? "text",
+    bg: opts.bg ?? "#0b0f17",
+    border: opts.border ?? (isFocused ? "#4ade80" : "#374151"),
+    radius: opts.radius ?? 5,
+    text: display,
+    textColor,
+    textAlign: opts.textAlign ?? "left",
+    font,
+    caretAt: isFocused && !showPlaceholder ? s.caret : undefined,
+  });
+
+  // focus / blur on click
+  if (mouse.justLeftClicked) {
+    if (hot === id) {
+      focusedInput = id;
+      // place caret near click x (rough — assumes monospace-ish spacing is fine
+      // for v1; could measure precisely later)
+      if (ctx) {
+        ctx.font = font;
+        const clickOffset = mouse.x - (s.rect.x + BUTTON_PAD_X);
+        let best = next.length;
+        for (let i = 0; i <= next.length; i++) {
+          const w = ctx.measureText(next.slice(0, i)).width;
+          if (w >= clickOffset) {
+            const prevW =
+              i > 0 ? ctx.measureText(next.slice(0, i - 1)).width : 0;
+            best = Math.abs(w - clickOffset) < Math.abs(clickOffset - prevW)
+              ? i
+              : i - 1;
+            break;
+          }
+        }
+        s.caret = Math.max(0, Math.min(next.length, best));
+      }
+    } else if (isFocused) {
+      focusedInput = null;
+    }
+  }
+
+  return { ...c, value: next };
 }
 
 // Floating window — draggable title bar + resizable bottom-right corner.
@@ -983,6 +1090,23 @@ function drawNode(node: Node, scrollAccum: number) {
     ctx.lineWidth = 1;
     setRectPath(rx + 0.5, ry + 0.5, rw - 1, rh - 1, node.radius);
     ctx.stroke();
+  }
+
+  // blinking caret (text input)
+  if (
+    node.caretAt !== undefined &&
+    node.text !== undefined &&
+    Math.floor(performance.now() / 500) % 2 === 0
+  ) {
+    ctx.font = node.font;
+    const fh = fontHeight(node.font);
+    const before = node.text.slice(0, node.caretAt);
+    const offset = ctx.measureText(before).width;
+    const padX = node.clickable || node.bg !== undefined ? BUTTON_PAD_X : 0;
+    const caretX = Math.round(rx + padX + offset);
+    const caretY = ry + rh / 2 - fh / 2;
+    ctx.fillStyle = node.textColor ?? FG;
+    ctx.fillRect(caretX, caretY, 1, fh);
   }
 
   if (node.text !== undefined) {
