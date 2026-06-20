@@ -4,7 +4,8 @@
   "type": "module",
   "workspaces": ["packages/*"],
   "scripts": {
-    "dev": "bun --filter canvas-gui-demos dev",
+    "demos": "bun --filter canvas-gui-demos dev",
+    "landing": "bun --filter canvas-gui-landing dev",
     "typecheck": "bunx tsc --noEmit",
     "vendor": "bun ./scripts/vendor.ts"
   },
