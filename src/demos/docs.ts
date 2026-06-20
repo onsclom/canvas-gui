@@ -21,6 +21,7 @@ const state = {
   name: "",
   email: "",
   bio: "",
+  fruit: "Apple" as "Apple" | "Banana" | "Cherry" | "Date" | "Elderberry",
 };
 
 let _canvasW = 0;
@@ -707,6 +708,30 @@ export function tick(ctx: CanvasRenderingContext2D, _dt: number) {
           ui.withTextColor(MUTED, () => {
             ui.withFont("12px ui-monospace, monospace", () => {
               ui.label(`${state.bio.length} chars, ${state.bio.split("\n").length} lines`);
+            });
+          });
+        },
+      );
+
+      section(
+        "Select",
+        "ui.select(value, options) returns the chosen value. Click to open, click an option or hit Escape to close.",
+        [
+          "state.fruit = ui.select(state.fruit, [",
+          '  "Apple", "Banana", "Cherry", "Date",',
+          '], { id: "fruit", width: 200 }).value;',
+        ],
+        () => {
+          ui.row({ gap: 12, align: "center" }, () => {
+            state.fruit = ui.select(
+              state.fruit,
+              ["Apple", "Banana", "Cherry", "Date", "Elderberry"] as const,
+              { id: "doc-fruit", width: 200 },
+            ).value;
+            ui.withTextColor(MUTED, () => {
+              ui.withFont("12px ui-monospace, monospace", () => {
+                ui.label(`= ${state.fruit}`);
+              });
             });
           });
         },

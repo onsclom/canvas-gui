@@ -372,6 +372,15 @@ export function frameEnd() {
   }
   if (keysJustPressed.has("Escape")) {
     focused = null;
+    openSelect = null;
+  }
+  // close open select when user clicks anything that isn't it or one of its options
+  if (mouse.justLeftClicked && openSelect !== null) {
+    const openId = openSelect as string;
+    const h = hot as string | null;
+    const hitInside =
+      h === openId || (h !== null && h.indexOf(openId + "#opt-") === 0);
+    if (!hitInside) openSelect = null;
   }
   // Enter activates the focused widget (text inputs handle Enter themselves
   // and either insert \n or blur — that's fine, the focus is already gone
@@ -616,6 +625,81 @@ export function textInput(
   }
 
   return { ...c, value: next };
+}
+
+// Select / dropdown. Returns the selected option. Click the trigger to
+// open the menu; clicking an option selects + closes; Escape or any click
+// outside also closes.
+let openSelect: string | null = null;
+
+export type SelectComm<T extends string> = Comm & { value: T };
+
+export function select<T extends string>(
+  value: T,
+  options: readonly T[],
+  opts: NodeOpts = {},
+): SelectComm<T> {
+  const id = opts.id ?? "select";
+  const isOpen = openSelect === id;
+
+  // trigger button — chevron rendered as a unicode suffix
+  const trigger = node({
+    height: 32,
+    ...opts,
+    id,
+    clickable: true,
+    bg: opts.bg ?? "auto",
+    text: `${value || "Select…"}   ▾`,
+    textAlign: opts.textAlign ?? "left",
+    radius: opts.radius ?? 5,
+    padding:
+      typeof opts.padding === "object"
+        ? opts.padding
+        : { l: 10, r: 10, t: 7, b: 7 },
+  });
+  if (trigger.clicked) {
+    openSelect = isOpen ? null : id;
+  }
+
+  let chosen = value;
+  if (isOpen) {
+    const r = trigger.rect;
+    const itemH = 30;
+    col(
+      {
+        x: r.x,
+        y: r.y + r.h + 4,
+        width: r.w,
+        bg: "#0b0f17",
+        border: "rgba(255,255,255,0.16)",
+        radius: 6,
+        padding: 4,
+        gap: 2,
+        align: "stretch",
+      },
+      () => {
+        for (let i = 0; i < options.length; i++) {
+          const opt = options[i]!;
+          const isCurrent = opt === value;
+          const c = button(opt, {
+            id: `${id}#opt-${i}`,
+            width: "grow",
+            height: itemH,
+            radius: 4,
+            textAlign: "left",
+            bg: isCurrent ? "accent" : "rgba(255,255,255,0)",
+            textColor: isCurrent ? "#052e16" : undefined,
+          });
+          if (c.clicked) {
+            chosen = opt;
+            openSelect = null;
+          }
+        }
+      },
+    );
+  }
+
+  return { ...trigger, value: chosen };
 }
 
 // Multi-line text input. Enter inserts a newline. Up/Down move the caret
