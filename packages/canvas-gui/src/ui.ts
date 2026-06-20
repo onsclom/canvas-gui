@@ -1200,18 +1200,45 @@ export function onCommand(handler: CmdHandler): void {
 
 // === layout ===
 
-function fitSize(node: Node, axis: "w" | "h"): number {
+// fit-size lookup. When asking for height, you can pass a knownWidth so
+// wrap-text descendants compute their real wrapped height instead of a
+// single-line intrinsicH (which solveContainer's pass-2 hasn't filled in
+// yet at this point).
+function fitSize(
+  node: Node,
+  axis: "w" | "h",
+  knownWidth?: number,
+): number {
   const spec = axis === "w" ? node.width : node.height;
   if (typeof spec === "number") return spec;
   if (spec === "grow") return 0;
   if (node.children.length === 0) {
+    if (
+      axis === "h" &&
+      node.wrap &&
+      node.text !== undefined &&
+      knownWidth !== undefined
+    ) {
+      const inner = knownWidth - node.padding.l - node.padding.r;
+      const padded = node.clickable || node.bg !== undefined;
+      const wrapW = padded ? inner - BUTTON_PAD_X * 2 : inner;
+      const lines = wrapText(node.text, wrapW, node.font);
+      const lineH = fontHeight(node.font);
+      return lines.length * lineH + (padded ? BUTTON_PAD_Y * 2 : 0);
+    }
     return axis === "w" ? node.intrinsicW : node.intrinsicH;
   }
   const isMain = (axis === "w") === (node.dir === "row");
   const inFlow = node.children.filter((c) => !c.isAbs);
+  // propagate width-context to descendants when we know it. for col
+  // containers the child's cross axis IS the width, so it inherits.
+  let childInnerW: number | undefined;
+  if (axis === "h" && knownWidth !== undefined && node.dir === "col") {
+    childInnerW = knownWidth - node.padding.l - node.padding.r;
+  }
   let total = 0;
   for (const c of inFlow) {
-    const cs = fitSize(c, axis);
+    const cs = fitSize(c, axis, childInnerW);
     if (isMain) total += cs;
     else total = Math.max(total, cs);
   }
@@ -1231,7 +1258,7 @@ function solveRoot(root: Node) {
   else root.cw = fitSize(root, "w");
   if (typeof root.height === "number") root.ch = root.height;
   else if (root.height === "grow") root.ch = canvasH - root.cy;
-  else root.ch = fitSize(root, "h");
+  else root.ch = fitSize(root, "h", root.cw);
   if (root.children.length > 0) solveContainer(root);
 }
 
@@ -1292,12 +1319,14 @@ function solveContainer(node: Node) {
   }
 
   // ── pass 3: resolve heights (c.ch) for all children ───────────────
+  // by now c.cw is set for every child (from pass 1), so we can pass it
+  // as knownWidth to fitSize so wrap-text descendants size correctly.
   if (isRow) {
     for (const c of inFlow) {
       if (typeof c.height === "number") c.ch = c.height;
       else if (c.height === "grow") c.ch = crossSize;
       else {
-        c.ch = c.wrappedLines ? c.intrinsicH : fitSize(c, "h");
+        c.ch = c.wrappedLines ? c.intrinsicH : fitSize(c, "h", c.cw);
         if (node.align === "stretch") c.ch = crossSize;
       }
     }
@@ -1309,7 +1338,7 @@ function solveContainer(node: Node) {
         c.ch = c.height;
         usedH += c.ch;
       } else if (c.height === "fit") {
-        c.ch = c.wrappedLines ? c.intrinsicH : fitSize(c, "h");
+        c.ch = c.wrappedLines ? c.intrinsicH : fitSize(c, "h", c.cw);
         usedH += c.ch;
       } else {
         growH++;

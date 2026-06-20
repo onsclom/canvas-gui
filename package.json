@@ -2,7 +2,9 @@
   "name": "canvas-gui-workspace",
   "private": true,
   "type": "module",
-  "workspaces": ["packages/*"],
+  "workspaces": [
+    "packages/*"
+  ],
   "scripts": {
     "demos": "bun --filter canvas-gui-demos dev",
     "landing": "bun --filter canvas-gui-landing dev",
@@ -10,8 +12,7 @@
     "vendor": "bun ./scripts/vendor.ts"
   },
   "devDependencies": {
-    "@types/bun": "latest",
-    "pdf-parse": "^2.4.5"
+    "@types/bun": "latest"
   },
   "peerDependencies": {
     "typescript": "^5"
