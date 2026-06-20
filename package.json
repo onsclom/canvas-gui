@@ -1,0 +1,17 @@
+{
+  "name": "canvas-gui",
+  "module": "src/index.ts",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "dev": "bun src/index.html --console",
+    "build": "bun build src/index.html --outdir=dist --minify",
+    "preview": "bunx serve dist"
+  },
+  "devDependencies": {
+    "@types/bun": "latest"
+  },
+  "peerDependencies": {
+    "typescript": "^5"
+  }
+}
