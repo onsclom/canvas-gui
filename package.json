@@ -9,7 +9,8 @@
     "preview": "bunx serve dist"
   },
   "devDependencies": {
-    "@types/bun": "latest"
+    "@types/bun": "latest",
+    "pdf-parse": "^2.4.5"
   },
   "peerDependencies": {
     "typescript": "^5"

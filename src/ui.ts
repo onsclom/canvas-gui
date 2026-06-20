@@ -1,139 +1,886 @@
 import { mouse } from "./input";
 
 const FONT = "14px system-ui, sans-serif";
-const BG = "#1f2937";
-const BG_HOT = "#374151";
-const BG_ACTIVE = "#4b5563";
+const BG = "#374151";
+const BG_HOT = "#4b5563";
+const BG_ACTIVE = "#6b7280";
 const FG = "#f3f4f6";
 const ACCENT = "#4ade80";
+const ACCENT_HOT = "#86efac";
 const ACCENT_FG = "#052e16";
 const TRACK = "#0f172a";
 
+const BUTTON_PAD_X = 12;
+const BUTTON_PAD_Y = 6;
+const SLIDER_FIT_W = 160;
+const SLIDER_FIT_H = 24;
+const LABEL_H = 16;
+const SCROLLBAR_W = 4;
+const SCROLLBAR_MARGIN = 4;
+
+const ANIM_DECAY = 20;
+const CACHE_STALE_FRAMES = 60;
+
+export type SizeSpec = number | "fit" | "grow";
+
+type Padding = { t: number; r: number; b: number; l: number };
+
+export type Rect = { x: number; y: number; w: number; h: number };
+
+export type Comm = {
+  rect: Rect;
+  hovering: boolean;
+  active: boolean;
+  pressed: boolean;
+  released: boolean;
+  clicked: boolean;
+  dragging: boolean;
+  dragDelta: { x: number; y: number };
+};
+
+export type ToggleComm = Comm & { value: boolean };
+export type SliderComm = Comm & { value: number };
+
+// "auto" = neutral palette (BG → BG_HOT → BG_ACTIVE) with hot/active blend
+// "accent" = green palette (ACCENT → ACCENT_HOT) with hot blend
+// any other string = fixed CSS color, no animation
+export type BgSpec = "auto" | "accent" | (string & {});
+
+export type NodeOpts = {
+  id?: string;
+  width?: SizeSpec;
+  height?: SizeSpec;
+  x?: number;
+  y?: number;
+  // layout (meaningful when children are provided)
+  dir?: "row" | "col";
+  padding?: number | Partial<Padding>;
+  gap?: number;
+  justify?: "start" | "center" | "end" | "between";
+  align?: "start" | "center" | "end" | "stretch";
+  scrollable?: boolean;
+  // features
+  clickable?: boolean;
+  bg?: BgSpec;
+  border?: string;
+  radius?: number;
+  text?: string;
+  textColor?: string;
+  textAlign?: "left" | "center";
+  font?: string;
+  wrap?: boolean;
+  fillBar?: number; // 0..1
+};
+
+export type ContainerOpts = NodeOpts;
+export type WidgetOpts = NodeOpts;
+
+type Node = {
+  id: string;
+  width: SizeSpec;
+  height: SizeSpec;
+  absX: number;
+  absY: number;
+  isAbs: boolean;
+  dir: "row" | "col";
+  padding: Padding;
+  gap: number;
+  justify: "start" | "center" | "end" | "between";
+  align: "start" | "center" | "end" | "stretch";
+  scrollable: boolean;
+  clickable: boolean;
+  bg?: BgSpec;
+  border?: string;
+  radius: number;
+  text?: string;
+  textColor?: string;
+  textAlign: "left" | "center";
+  font: string;
+  wrap: boolean;
+  wrappedLines?: string[];
+  fillBar?: number;
+  intrinsicW: number;
+  intrinsicH: number;
+  children: Node[];
+  cx: number;
+  cy: number;
+  cw: number;
+  ch: number;
+};
+
+type WidgetState = {
+  rect: Rect;
+  pressX: number;
+  pressY: number;
+  hotT: number;
+  activeT: number;
+  scrollY: number;
+  contentH: number;
+  lastTouched: number;
+};
+
+type CmdHandler = (name: string, args?: Record<string, unknown>) => void;
+
 let ctx: CanvasRenderingContext2D | null = null;
+let canvasW = 0;
+let canvasH = 0;
+let dtSec = 0;
+let roots: Node[] = [];
+let stack: Node[] = [];
 let hot: string | null = null;
 let active: string | null = null;
-let prevLeftDown = false;
-let leftReleased = false;
+let nextHot: string | null = null;
+let nextScrollTarget: string | null = null;
+let frameIdx = 0;
+const cache = new Map<string, WidgetState>();
+const pendingClicks = new Set<string>();
+const pendingPresses = new Set<string>();
+const pendingReleases = new Set<string>();
+const deferredAbs: Node[] = [];
 
-export function begin(c: CanvasRenderingContext2D) {
-  ctx = c;
-  hot = null;
-  leftReleased = prevLeftDown && !mouse.leftClickDown;
-  ctx.font = FONT;
-  ctx.textBaseline = "middle";
+const textColorStack: string[] = [];
+const widthStack: SizeSpec[] = [];
+const heightStack: SizeSpec[] = [];
+const fontStack: string[] = [];
+
+const cmdQueue: Array<{ name: string; args?: Record<string, unknown> }> = [];
+const cmdHandlers: CmdHandler[] = [];
+
+function normPadding(p?: number | Partial<Padding>): Padding {
+  if (p == null) return { t: 0, r: 0, b: 0, l: 0 };
+  if (typeof p === "number") return { t: p, r: p, b: p, l: p };
+  return { t: p.t ?? 0, r: p.r ?? 0, b: p.b ?? 0, l: p.l ?? 0 };
 }
 
-export function end() {
-  prevLeftDown = mouse.leftClickDown;
-  if (!mouse.leftClickDown) active = null;
-  ctx = null;
-}
-
-function hit(x: number, y: number, w: number, h: number) {
+function hit(r: Rect) {
+  if (!mouse.onCanvas || r.w <= 0 || r.h <= 0) return false;
   return (
-    mouse.onCanvas &&
-    mouse.x >= x &&
-    mouse.x < x + w &&
-    mouse.y >= y &&
-    mouse.y < y + h
+    mouse.x >= r.x &&
+    mouse.x < r.x + r.w &&
+    mouse.y >= r.y &&
+    mouse.y < r.y + r.h
   );
 }
 
-export function label(text: string, x: number, y: number) {
-  if (!ctx) return;
-  ctx.fillStyle = FG;
-  ctx.textAlign = "left";
-  ctx.fillText(text, x, y);
+function fontHeight(font: string): number {
+  const fh = font.match(/(\d+(?:\.\d+)?)px/);
+  return fh ? parseFloat(fh[1]!) : LABEL_H;
 }
 
-export function button(
-  id: string,
-  text: string,
-  x: number,
-  y: number,
-  w: number,
-  h: number,
-): boolean {
-  if (!ctx) return false;
-  const over = hit(x, y, w, h);
-  if (over) hot = id;
-  if (over && mouse.justLeftClicked) active = id;
+function measureText(text: string, font: string): { w: number; h: number } {
+  if (!ctx) return { w: 0, h: LABEL_H };
+  ctx.font = font;
+  const m = ctx.measureText(text);
+  return { w: m.width, h: fontHeight(font) };
+}
 
-  const isHot = hot === id;
+function wrapText(text: string, maxWidth: number, font: string): string[] {
+  if (!ctx || maxWidth <= 0) return [text];
+  ctx.font = font;
+  const parts = text.split(/(\s+)/);
+  const lines: string[] = [];
+  let line = "";
+  for (const p of parts) {
+    if (!p) continue;
+    const test = line + p;
+    if (line && ctx.measureText(test).width > maxWidth) {
+      lines.push(line.trimEnd());
+      line = p.trimStart();
+    } else {
+      line = test;
+    }
+  }
+  if (line) lines.push(line.trimEnd());
+  return lines.length > 0 ? lines : [text];
+}
+
+function clamp(v: number, lo: number, hi: number) {
+  return Math.max(lo, Math.min(hi, v));
+}
+function lerp(a: number, b: number, t: number) {
+  return a + (b - a) * t;
+}
+function expDecay(current: number, target: number, decay: number): number {
+  return target + (current - target) * Math.exp(-decay * dtSec);
+}
+
+function parseColor(s: string): [number, number, number] {
+  if (s[0] === "#") {
+    return [
+      parseInt(s.slice(1, 3), 16),
+      parseInt(s.slice(3, 5), 16),
+      parseInt(s.slice(5, 7), 16),
+    ];
+  }
+  const m = s.match(/(\d+)\D+(\d+)\D+(\d+)/);
+  if (m) return [+m[1]!, +m[2]!, +m[3]!];
+  return [0, 0, 0];
+}
+function lerpColor(a: string, b: string, t: number): string {
+  const [ar, ag, ab] = parseColor(a);
+  const [br, bg, bb] = parseColor(b);
+  return `rgb(${Math.round(lerp(ar, br, t))},${Math.round(lerp(ag, bg, t))},${Math.round(lerp(ab, bb, t))})`;
+}
+
+function getState(id: string): WidgetState {
+  let s = cache.get(id);
+  if (!s) {
+    s = {
+      rect: { x: 0, y: 0, w: 0, h: 0 },
+      pressX: 0,
+      pressY: 0,
+      hotT: 0,
+      activeT: 0,
+      scrollY: 0,
+      contentH: 0,
+      lastTouched: frameIdx,
+    };
+    cache.set(id, s);
+  }
+  return s;
+}
+
+function top<T>(s: T[]): T | undefined {
+  return s[s.length - 1];
+}
+
+const EMPTY_COMM: Comm = Object.freeze({
+  rect: Object.freeze({ x: 0, y: 0, w: 0, h: 0 }),
+  hovering: false,
+  active: false,
+  pressed: false,
+  released: false,
+  clicked: false,
+  dragging: false,
+  dragDelta: Object.freeze({ x: 0, y: 0 }),
+}) as unknown as Comm;
+
+function widgetComm(id: string): Comm {
+  const s = getState(id);
+  s.lastTouched = frameIdx;
+  const clicked = pendingClicks.has(id);
+  if (clicked) pendingClicks.delete(id);
+  const pressed = pendingPresses.has(id);
+  if (pressed) pendingPresses.delete(id);
+  const released = pendingReleases.has(id);
+  if (released) pendingReleases.delete(id);
   const isActive = active === id;
-  ctx.fillStyle = isActive && isHot ? BG_ACTIVE : isHot ? BG_HOT : BG;
-  ctx.fillRect(x, y, w, h);
-  ctx.fillStyle = FG;
-  ctx.textAlign = "center";
-  ctx.fillText(text, x + w / 2, y + h / 2);
+  return {
+    rect: s.rect,
+    hovering: hot === id,
+    active: isActive,
+    pressed,
+    released,
+    clicked,
+    dragging: isActive && mouse.leftClickDown,
+    dragDelta: { x: mouse.x - s.pressX, y: mouse.y - s.pressY },
+  };
+}
 
-  return isActive && isHot && leftReleased;
+// === lifecycle ===
+
+export function frameStart(c: CanvasRenderingContext2D, deltaMs: number) {
+  if (cmdQueue.length > 0) {
+    const queue = cmdQueue.slice();
+    cmdQueue.length = 0;
+    for (const q of queue) for (const h of cmdHandlers) h(q.name, q.args);
+  }
+  ctx = c;
+  canvasW = c.canvas.width / devicePixelRatio;
+  canvasH = c.canvas.height / devicePixelRatio;
+  dtSec = Math.min(deltaMs, 100) / 1000;
+  roots = [];
+  stack = [];
+  frameIdx++;
+  c.font = FONT;
+  c.textBaseline = "middle";
+}
+
+export function frameEnd() {
+  if (!ctx) return;
+  nextHot = null;
+  nextScrollTarget = null;
+  deferredAbs.length = 0;
+
+  // phase 1: solve + draw all in-flow roots; abs roots get deferred to the
+  // top of the z-stack so they aren't clipped by ancestors
+  for (const r of roots) {
+    solveRoot(r);
+    if (r.isAbs) deferredAbs.push(r);
+    else drawNode(r, 0);
+  }
+  // phase 2: deferred abs nodes (incl. ones discovered during phase 1)
+  let i = 0;
+  while (i < deferredAbs.length) {
+    drawNode(deferredAbs[i++]!, 0);
+  }
+
+  hot = nextHot;
+
+  // wheel handling — applies to topmost scrollable under cursor
+  if (nextScrollTarget && mouse.wheelDelta !== 0) {
+    const s = getState(nextScrollTarget);
+    const maxScroll = Math.max(0, s.contentH - s.rect.h);
+    s.scrollY = clamp(s.scrollY + mouse.wheelDelta, 0, maxScroll);
+  }
+
+  // press / release event queueing
+  if (mouse.justLeftClicked && hot !== null && active === null) {
+    active = hot;
+    const s = getState(active);
+    s.pressX = mouse.x;
+    s.pressY = mouse.y;
+    pendingPresses.add(active);
+  }
+  if (mouse.justLeftReleased && active !== null) {
+    pendingReleases.add(active);
+    const s = getState(active);
+    if (hit(s.rect)) pendingClicks.add(active);
+  }
+  if (!mouse.leftClickDown) active = null;
+
+  for (const [id, s] of cache) {
+    if (s.lastTouched < frameIdx - CACHE_STALE_FRAMES) cache.delete(id);
+  }
+  ctx = null;
+}
+
+// === node primitive ===
+
+function makeNode(opts: NodeOpts): Node {
+  const hasXY = opts.x !== undefined || opts.y !== undefined;
+  const font = opts.font ?? top(fontStack) ?? FONT;
+  let intrinsicW = 0;
+  let intrinsicH = 0;
+  if (opts.fillBar !== undefined) {
+    intrinsicW = SLIDER_FIT_W;
+    intrinsicH = SLIDER_FIT_H;
+    if (opts.text !== undefined) {
+      const m = measureText(opts.text, font);
+      intrinsicW = Math.max(intrinsicW, m.w + BUTTON_PAD_X * 2);
+    }
+  } else if (opts.text !== undefined) {
+    const m = measureText(opts.text, font);
+    const padded = opts.clickable === true || opts.bg !== undefined;
+    intrinsicW = padded ? m.w + BUTTON_PAD_X * 2 : m.w;
+    intrinsicH = padded ? m.h + BUTTON_PAD_Y * 2 : m.h;
+  }
+
+  return {
+    id: opts.id ?? "",
+    width: opts.width ?? top(widthStack) ?? "fit",
+    height: opts.height ?? top(heightStack) ?? "fit",
+    absX: opts.x ?? 0,
+    absY: opts.y ?? 0,
+    isAbs: hasXY,
+    dir: opts.dir ?? "col",
+    padding: normPadding(opts.padding),
+    gap: opts.gap ?? 0,
+    justify: opts.justify ?? "start",
+    align: opts.align ?? "start",
+    scrollable: !!opts.scrollable,
+    clickable: !!opts.clickable,
+    bg: opts.bg,
+    border: opts.border,
+    radius: opts.radius ?? 0,
+    text: opts.text,
+    textColor: opts.textColor ?? top(textColorStack),
+    textAlign: opts.textAlign ?? "left",
+    font,
+    wrap: !!opts.wrap,
+    fillBar: opts.fillBar,
+    intrinsicW,
+    intrinsicH,
+    children: [],
+    cx: 0,
+    cy: 0,
+    cw: 0,
+    ch: 0,
+  };
+}
+
+function attachToParent(n: Node) {
+  if (stack.length > 0) {
+    stack[stack.length - 1]!.children.push(n);
+  } else {
+    if (!n.isAbs) {
+      n.absX = 0;
+      n.absY = 0;
+      n.isAbs = true;
+    }
+    roots.push(n);
+  }
+}
+
+export function node(opts: NodeOpts, children?: () => void): Comm {
+  const n = makeNode(opts);
+  attachToParent(n);
+  if (children) {
+    stack.push(n);
+    children();
+    stack.pop();
+  }
+  if (!n.id) return EMPTY_COMM;
+  return widgetComm(n.id);
+}
+
+export function row(opts: NodeOpts, fn: () => void): Comm {
+  return node({ ...opts, dir: "row" }, fn);
+}
+export function col(opts: NodeOpts, fn: () => void): Comm {
+  return node({ ...opts, dir: "col" }, fn);
+}
+
+// === widgets ===
+
+export function spacer(opts: NodeOpts = {}): void {
+  node(opts);
+}
+
+export function label(text: string, opts: NodeOpts = {}): void {
+  node({ ...opts, text, textAlign: opts.textAlign ?? "left" });
+}
+
+export function button(labelText: string, opts: NodeOpts = {}): Comm {
+  return node({
+    ...opts,
+    id: opts.id ?? labelText,
+    clickable: true,
+    bg: opts.bg ?? "auto",
+    text: labelText,
+    textAlign: opts.textAlign ?? "center",
+  });
 }
 
 export function toggle(
-  id: string,
-  text: string,
+  labelText: string,
   value: boolean,
-  x: number,
-  y: number,
-  w: number,
-  h: number,
-): boolean {
-  if (!ctx) return value;
-  const over = hit(x, y, w, h);
-  if (over) hot = id;
-  if (over && mouse.justLeftClicked) active = id;
-
-  const isHot = hot === id;
-  const isActive = active === id;
-  ctx.fillStyle = value
-    ? isHot
-      ? "#86efac"
-      : ACCENT
-    : isActive && isHot
-      ? BG_ACTIVE
-      : isHot
-        ? BG_HOT
-        : BG;
-  ctx.fillRect(x, y, w, h);
-  ctx.fillStyle = value ? ACCENT_FG : FG;
-  ctx.textAlign = "center";
-  ctx.fillText(text, x + w / 2, y + h / 2);
-
-  if (isActive && isHot && leftReleased) return !value;
-  return value;
+  opts: NodeOpts = {},
+): ToggleComm {
+  const id = opts.id ?? labelText;
+  const c = node({
+    ...opts,
+    id,
+    clickable: true,
+    bg: opts.bg ?? (value ? "accent" : "auto"),
+    text: labelText,
+    textColor: opts.textColor ?? (value ? ACCENT_FG : undefined),
+    textAlign: opts.textAlign ?? "center",
+  });
+  return { ...c, value: c.clicked ? !value : value };
 }
 
+export type SliderOpts = NodeOpts & {
+  precision?: number;
+  step?: number;
+  suffix?: string;
+};
+
 export function slider(
-  id: string,
-  text: string,
+  labelText: string,
   v: number,
   min: number,
   max: number,
+  opts: SliderOpts = {},
+): SliderComm {
+  const id = opts.id ?? labelText;
+  const precision = opts.precision ?? 2;
+  const step = opts.step;
+  const suffix = opts.suffix ?? "";
+  let val = v;
+  const cached = cache.get(id);
+  if (cached && active === id && mouse.leftClickDown && cached.rect.w > 0) {
+    const t = clamp((mouse.x - cached.rect.x) / cached.rect.w, 0, 1);
+    val = min + (max - min) * t;
+  }
+  if (step) val = Math.round(val / step) * step;
+  const t = max > min ? (val - min) / (max - min) : 0;
+  const formatted = val.toFixed(precision) + suffix;
+  const display = labelText ? `${labelText}: ${formatted}` : formatted;
+  const c = node({
+    ...opts,
+    id,
+    clickable: true,
+    fillBar: t,
+    text: display,
+    textAlign: opts.textAlign ?? "center",
+  });
+  return { ...c, value: val };
+}
+
+// === style stacks ===
+
+function withStack<S, T>(s: S[], v: S, fn: () => T): T {
+  s.push(v);
+  try {
+    return fn();
+  } finally {
+    s.pop();
+  }
+}
+export function pushTextColor(c: string) {
+  textColorStack.push(c);
+}
+export function popTextColor() {
+  textColorStack.pop();
+}
+export function withTextColor<T>(c: string, fn: () => T): T {
+  return withStack(textColorStack, c, fn);
+}
+export function pushWidth(w: SizeSpec) {
+  widthStack.push(w);
+}
+export function popWidth() {
+  widthStack.pop();
+}
+export function withWidth<T>(w: SizeSpec, fn: () => T): T {
+  return withStack(widthStack, w, fn);
+}
+export function pushHeight(h: SizeSpec) {
+  heightStack.push(h);
+}
+export function popHeight() {
+  heightStack.pop();
+}
+export function withHeight<T>(h: SizeSpec, fn: () => T): T {
+  return withStack(heightStack, h, fn);
+}
+export function pushFont(f: string) {
+  fontStack.push(f);
+}
+export function popFont() {
+  fontStack.pop();
+}
+export function withFont<T>(f: string, fn: () => T): T {
+  return withStack(fontStack, f, fn);
+}
+
+// === command buffer ===
+
+export function cmd(name: string, args?: Record<string, unknown>): void {
+  cmdQueue.push({ name, args });
+}
+export function onCommand(handler: CmdHandler): void {
+  cmdHandlers.push(handler);
+}
+
+// === layout ===
+
+function fitSize(node: Node, axis: "w" | "h"): number {
+  const spec = axis === "w" ? node.width : node.height;
+  if (typeof spec === "number") return spec;
+  if (spec === "grow") return 0;
+  if (node.children.length === 0) {
+    return axis === "w" ? node.intrinsicW : node.intrinsicH;
+  }
+  const isMain = (axis === "w") === (node.dir === "row");
+  const inFlow = node.children.filter((c) => !c.isAbs);
+  let total = 0;
+  for (const c of inFlow) {
+    const cs = fitSize(c, axis);
+    if (isMain) total += cs;
+    else total = Math.max(total, cs);
+  }
+  if (isMain && inFlow.length > 1) total += node.gap * (inFlow.length - 1);
+  total +=
+    axis === "w"
+      ? node.padding.l + node.padding.r
+      : node.padding.t + node.padding.b;
+  return total;
+}
+
+function solveRoot(root: Node) {
+  root.cx = root.absX;
+  root.cy = root.absY;
+  if (typeof root.width === "number") root.cw = root.width;
+  else if (root.width === "grow") root.cw = canvasW - root.cx;
+  else root.cw = fitSize(root, "w");
+  if (typeof root.height === "number") root.ch = root.height;
+  else if (root.height === "grow") root.ch = canvasH - root.cy;
+  else root.ch = fitSize(root, "h");
+  if (root.children.length > 0) solveContainer(root);
+}
+
+function solveContainer(node: Node) {
+  const isRow = node.dir === "row";
+  const inFlow = node.children.filter((c) => !c.isAbs);
+  const innerW = node.cw - node.padding.l - node.padding.r;
+  const innerH = node.ch - node.padding.t - node.padding.b;
+  const mainSize = isRow ? innerW : innerH;
+  const crossSize = isRow ? innerH : innerW;
+  const totalGaps = node.gap * Math.max(0, inFlow.length - 1);
+
+  // ── pass 1: resolve widths (c.cw) for all children ────────────────
+  // Widths come first so wrap-children can wrap to a known width before
+  // their heights are needed. For row, width is main (incl. grow distribution).
+  // For col, width is cross.
+  if (isRow) {
+    let usedW = 0;
+    let growW = 0;
+    for (const c of inFlow) {
+      if (typeof c.width === "number") {
+        c.cw = c.width;
+        usedW += c.cw;
+      } else if (c.width === "fit") {
+        c.cw = fitSize(c, "w");
+        usedW += c.cw;
+      } else {
+        growW++;
+      }
+    }
+    const leftoverW = Math.max(0, mainSize - usedW - totalGaps);
+    const perGrowW = growW > 0 ? leftoverW / growW : 0;
+    for (const c of inFlow) {
+      if (c.width === "grow") c.cw = perGrowW;
+    }
+  } else {
+    for (const c of inFlow) {
+      if (typeof c.width === "number") c.cw = c.width;
+      else if (c.width === "grow") c.cw = crossSize;
+      else {
+        c.cw = fitSize(c, "w");
+        if (node.align === "stretch") c.cw = crossSize;
+      }
+    }
+  }
+
+  // ── pass 2: wrap text → override intrinsicH for wrap-children ─────
+  for (const c of inFlow) {
+    if (c.wrap && c.text !== undefined && c.cw > 0) {
+      const inner = c.cw - c.padding.l - c.padding.r;
+      const padded = c.clickable || c.bg !== undefined;
+      const wrapW = padded ? inner - BUTTON_PAD_X * 2 : inner;
+      const lines = wrapText(c.text, wrapW, c.font);
+      c.wrappedLines = lines;
+      const lineH = fontHeight(c.font);
+      c.intrinsicH = lines.length * lineH + (padded ? BUTTON_PAD_Y * 2 : 0);
+    }
+  }
+
+  // ── pass 3: resolve heights (c.ch) for all children ───────────────
+  if (isRow) {
+    for (const c of inFlow) {
+      if (typeof c.height === "number") c.ch = c.height;
+      else if (c.height === "grow") c.ch = crossSize;
+      else {
+        c.ch = c.wrappedLines ? c.intrinsicH : fitSize(c, "h");
+        if (node.align === "stretch") c.ch = crossSize;
+      }
+    }
+  } else {
+    let usedH = 0;
+    let growH = 0;
+    for (const c of inFlow) {
+      if (typeof c.height === "number") {
+        c.ch = c.height;
+        usedH += c.ch;
+      } else if (c.height === "fit") {
+        c.ch = c.wrappedLines ? c.intrinsicH : fitSize(c, "h");
+        usedH += c.ch;
+      } else {
+        growH++;
+      }
+    }
+    const leftoverH = Math.max(0, mainSize - usedH - totalGaps);
+    const perGrowH = growH > 0 ? leftoverH / growH : 0;
+    for (const c of inFlow) {
+      if (c.height === "grow") c.ch = perGrowH;
+    }
+  }
+
+  const innerX = node.cx + node.padding.l;
+  const innerY = node.cy + node.padding.t;
+  let totalMain = 0;
+  for (const c of inFlow) totalMain += isRow ? c.cw : c.ch;
+  totalMain += totalGaps;
+  let mainStart = 0;
+  let extraGap = 0;
+  switch (node.justify) {
+    case "center":
+      mainStart = (mainSize - totalMain) / 2;
+      break;
+    case "end":
+      mainStart = mainSize - totalMain;
+      break;
+    case "between":
+      if (inFlow.length > 1)
+        extraGap = (mainSize - totalMain) / (inFlow.length - 1);
+      break;
+  }
+  let cursor = mainStart;
+  for (const c of inFlow) {
+    const cMain = isRow ? c.cw : c.ch;
+    const cCross = isRow ? c.ch : c.cw;
+    let crossOff = 0;
+    switch (node.align) {
+      case "center":
+        crossOff = (crossSize - cCross) / 2;
+        break;
+      case "end":
+        crossOff = crossSize - cCross;
+        break;
+    }
+    if (isRow) {
+      c.cx = innerX + cursor;
+      c.cy = innerY + crossOff;
+    } else {
+      c.cx = innerX + crossOff;
+      c.cy = innerY + cursor;
+    }
+    cursor += cMain + node.gap + extraGap;
+    if (c.children.length > 0) solveContainer(c);
+  }
+
+  // record content size for scrollable; clamp scroll to current bounds
+  if (node.scrollable && node.id) {
+    const s = getState(node.id);
+    s.contentH = totalMain + node.padding.t + node.padding.b;
+    const maxScroll = Math.max(0, s.contentH - node.ch);
+    if (s.scrollY > maxScroll) s.scrollY = maxScroll;
+    if (s.scrollY < 0) s.scrollY = 0;
+  }
+
+  for (const c of node.children) {
+    if (c.isAbs) solveRoot(c);
+  }
+}
+
+// === drawing ===
+
+function setRectPath(
   x: number,
   y: number,
   w: number,
   h: number,
-): number {
-  if (!ctx) return v;
-  const over = hit(x, y, w, h);
-  if (over) hot = id;
-  if (over && mouse.justLeftClicked) active = id;
+  radius: number,
+) {
+  if (!ctx) return;
+  ctx.beginPath();
+  if (radius > 0) ctx.roundRect(x, y, w, h, radius);
+  else ctx.rect(x, y, w, h);
+}
 
-  let val = v;
-  if (active === id && mouse.leftClickDown) {
-    const t = Math.min(1, Math.max(0, (mouse.x - x) / w));
-    val = min + (max - min) * t;
+function resolveBg(spec: BgSpec, hotT: number, activeT: number): string {
+  if (spec === "auto") {
+    return lerpColor(lerpColor(BG, BG_HOT, hotT), BG_ACTIVE, activeT);
   }
-  const t = (val - min) / (max - min);
+  if (spec === "accent") {
+    return lerpColor(ACCENT, ACCENT_HOT, hotT);
+  }
+  return spec;
+}
 
-  ctx.fillStyle = TRACK;
-  ctx.fillRect(x, y, w, h);
-  ctx.fillStyle = active === id ? BG_ACTIVE : hot === id ? BG_HOT : BG;
-  ctx.fillRect(x, y, w * t, h);
-  ctx.fillStyle = FG;
-  ctx.textAlign = "center";
-  ctx.fillText(`${text}: ${val.toFixed(2)}`, x + w / 2, y + h / 2);
+function drawNode(node: Node, scrollAccum: number) {
+  if (!ctx) return;
 
-  return val;
+  const rx = node.cx;
+  const ry = node.cy - scrollAccum;
+  const rw = node.cw;
+  const rh = node.ch;
+
+  const s = node.id ? getState(node.id) : null;
+  if (s) {
+    s.rect = { x: rx, y: ry, w: rw, h: rh };
+    const isHovering = hot === node.id;
+    const isActive = active === node.id;
+    s.hotT = expDecay(s.hotT, isHovering ? 1 : 0, ANIM_DECAY);
+    s.activeT = expDecay(s.activeT, isActive ? 1 : 0, ANIM_DECAY);
+    // last-wins z-order: latest call with cursor over wins hot
+    if (hit(s.rect)) {
+      nextHot = node.id;
+      if (node.scrollable) nextScrollTarget = node.id;
+    }
+  }
+  const hotT = s?.hotT ?? 0;
+  const activeT = s?.activeT ?? 0;
+
+  if (node.bg !== undefined) {
+    ctx.fillStyle = resolveBg(node.bg, hotT, activeT);
+    setRectPath(rx, ry, rw, rh, node.radius);
+    ctx.fill();
+  }
+
+  if (node.fillBar !== undefined) {
+    ctx.fillStyle = TRACK;
+    setRectPath(rx, ry, rw, rh, node.radius);
+    ctx.fill();
+    ctx.fillStyle = resolveBg("auto", hotT, activeT);
+    setRectPath(
+      rx,
+      ry,
+      rw * clamp(node.fillBar, 0, 1),
+      rh,
+      node.radius,
+    );
+    ctx.fill();
+  }
+
+  if (node.border) {
+    ctx.strokeStyle = node.border;
+    ctx.lineWidth = 1;
+    setRectPath(rx + 0.5, ry + 0.5, rw - 1, rh - 1, node.radius);
+    ctx.stroke();
+  }
+
+  if (node.text !== undefined) {
+    ctx.font = node.font;
+    ctx.fillStyle = node.textColor ?? FG;
+    ctx.textAlign = node.textAlign;
+    const tx = node.textAlign === "center" ? rx + rw / 2 : rx;
+    if (node.wrappedLines) {
+      const lineH = fontHeight(node.font);
+      const padded = node.clickable || node.bg !== undefined;
+      const startY = padded
+        ? ry + BUTTON_PAD_Y + lineH / 2
+        : ry + lineH / 2;
+      for (let i = 0; i < node.wrappedLines.length; i++) {
+        ctx.fillText(node.wrappedLines[i]!, tx, startY + i * lineH);
+      }
+    } else {
+      ctx.fillText(node.text, tx, ry + rh / 2);
+    }
+  }
+
+  // children: in-flow inside clip, abs deferred to top of z-stack
+  let childScroll = scrollAccum;
+  let clipped = false;
+  if (node.scrollable && s) {
+    childScroll += s.scrollY;
+    ctx.save();
+    setRectPath(rx, ry, rw, rh, node.radius);
+    ctx.clip();
+    clipped = true;
+  }
+  for (const c of node.children) {
+    if (c.isAbs) deferredAbs.push(c);
+    else drawNode(c, childScroll);
+  }
+  if (clipped) {
+    ctx.restore();
+    drawScrollbar(rx, ry, rw, rh, s!.contentH, s!.scrollY);
+  }
+}
+
+function drawScrollbar(
+  rx: number,
+  ry: number,
+  rw: number,
+  rh: number,
+  contentH: number,
+  scrollY: number,
+) {
+  if (!ctx || contentH <= rh) return;
+  const trackX = rx + rw - SCROLLBAR_W - SCROLLBAR_MARGIN;
+  const trackY = ry + SCROLLBAR_MARGIN;
+  const trackH = rh - SCROLLBAR_MARGIN * 2;
+  ctx.fillStyle = "rgba(255,255,255,0.08)";
+  setRectPath(trackX, trackY, SCROLLBAR_W, trackH, SCROLLBAR_W / 2);
+  ctx.fill();
+  const thumbH = Math.max(20, (trackH * rh) / contentH);
+  const maxScroll = contentH - rh;
+  const thumbY =
+    trackY + (trackH - thumbH) * (scrollY / Math.max(1, maxScroll));
+  ctx.fillStyle = "rgba(255,255,255,0.45)";
+  setRectPath(trackX, thumbY, SCROLLBAR_W, thumbH, SCROLLBAR_W / 2);
+  ctx.fill();
 }

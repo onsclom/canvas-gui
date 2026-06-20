@@ -1,0 +1,7 @@
+- modals? things blocking other ui?
+- floating windows that can be moved and resized?
+- add cursor state support to ui elements so things like hovering buttons change cursor appearance
+- improve scroll bars so you can click and drag them like real scroll bars
+- more complex widgets like single-line text input, multi-line text input
+- more custom animations with example demos
+- accessiblity? keyboard, game controller navigation

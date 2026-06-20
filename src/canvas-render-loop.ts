@@ -1,4 +1,5 @@
 import { resetInput } from "./input";
+import { frameStart as uiFrameStart, frameEnd as uiFrameEnd } from "./ui";
 
 const FIXED_FPS = 0;
 
@@ -39,7 +40,9 @@ function runTickStep(
   assert(ctx);
   ctx.scale(devicePixelRatio, devicePixelRatio);
 
+  uiFrameStart(ctx, dt);
   tick(ctx, dt);
+  uiFrameEnd();
   resetInput();
 }
 
