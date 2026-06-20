@@ -855,6 +855,22 @@ export function tick(ctx: CanvasRenderingContext2D, _dt: number) {
         },
       );
 
+      section(
+        "Text selection",
+        "Plain labels and paragraphs are selectable like text on a web page — drag across any of the prose on this page to select it, then press Ctrl+C to copy. Text inside buttons and inputs is excluded. Turn it off with ui.setTextSelectable(false).",
+        [
+          "// on by default — just drag to select, Ctrl+C to copy",
+          "ui.setTextSelectable(false); // to disable",
+        ],
+        () => {
+          ui.label(
+            "Try selecting this sentence with the mouse, then copy it. " +
+              "Selection spans multiple lines and labels, just like HTML.",
+            { wrap: true, width: "grow" },
+          );
+        },
+      );
+
       // ── Footer ────────────────────────────────────────────────────
       ui.col(
         {

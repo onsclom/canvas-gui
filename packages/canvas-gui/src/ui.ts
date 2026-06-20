@@ -190,6 +190,8 @@ const focusList: string[] = [];
 // during draw pass, tracks which window subtree we're currently inside
 // so each widget can record its owning window in s.ownerWindow
 let currentDrawWindow: string | null = null;
+// >0 while drawing inside a clickable subtree; text there is not page-selectable
+let inClickable = 0;
 let frameIdx = 0;
 const cache = new Map<string, WidgetState>();
 const pendingClicks = new Set<string>();
@@ -205,6 +207,27 @@ const focusRingStack: string[] = [];
 
 const cmdQueue: Array<{ name: string; args?: Record<string, unknown> }> = [];
 const cmdHandlers: CmdHandler[] = [];
+
+// === page-wide text selection (HTML-like) ===
+// Every plain (left-aligned, non-clickable) text line drawn this frame is
+// recorded as a TextRun in document order. A drag over those runs builds a
+// selection spanning runs; Ctrl+C copies it. Disabled via setTextSelectable.
+type TextRun = { text: string; x: number; y: number; h: number; font: string };
+type RunPos = { run: number; off: number };
+let textRuns: TextRun[] = [];
+let pageSelEnabled = true;
+let pageSelDragging = false;
+let pageSelAnchor: RunPos | null = null;
+let pageSelFocus: RunPos | null = null;
+// sorted [lo, hi] bounds for the current frame's draw, derived from anchor/focus
+let pageSelLo: RunPos | null = null;
+let pageSelHi: RunPos | null = null;
+
+// Enable/disable page-wide text selection (on by default).
+export function setTextSelectable(on: boolean) {
+  pageSelEnabled = on;
+  if (!on) pageSelAnchor = pageSelFocus = pageSelLo = pageSelHi = null;
+}
 
 function normPadding(p?: number | Partial<Padding>): Padding {
   if (p == null) return { t: 0, r: 0, b: 0, l: 0 };
@@ -394,6 +417,20 @@ export function frameStart(c: CanvasRenderingContext2D, deltaMs: number) {
   frameIdx++;
   c.font = FONT;
   c.textBaseline = "middle";
+
+  // runs are rebuilt every frame in document draw order; freeze this frame's
+  // sorted selection bounds so drawNode can highlight runs as it records them
+  textRuns = [];
+  inClickable = 0;
+  if (pageSelAnchor && pageSelFocus) {
+    const a = pageSelAnchor;
+    const b = pageSelFocus;
+    const swap = a.run > b.run || (a.run === b.run && a.off > b.off);
+    pageSelLo = swap ? b : a;
+    pageSelHi = swap ? a : b;
+  } else {
+    pageSelLo = pageSelHi = null;
+  }
 }
 
 export function frameEnd() {
@@ -458,6 +495,32 @@ export function frameEnd() {
   // a real mouse click moves focus too
   if (mouse.justLeftClicked) {
     focused = hot;
+  }
+
+  // page-wide text selection (HTML-like). Pressing on a plain text run while
+  // no widget is hovered starts a selection; dragging extends it across runs;
+  // Ctrl+C copies it (when no text field is focused). Uses this frame's runs,
+  // collected during the draw pass above — ctx is still valid here.
+  if (pageSelEnabled) {
+    if (mouse.justLeftClicked) {
+      const startHit =
+        hot === null ? pageSelStartHit(mouse.x, mouse.y) : null;
+      pageSelAnchor = pageSelFocus = startHit;
+      pageSelDragging = startHit !== null;
+    }
+    if (pageSelDragging && mouse.leftClickDown) {
+      const f = pageCaretAt(mouse.x, mouse.y);
+      if (f) pageSelFocus = f;
+    }
+    if (!mouse.leftClickDown) pageSelDragging = false;
+    if (
+      focused === null &&
+      keysDown.has("Control") &&
+      (keysTyped.has("c") || keysTyped.has("C"))
+    ) {
+      const txt = pageSelectionText();
+      if (txt) void navigator.clipboard?.writeText(txt);
+    }
   }
 
   // wheel handling — applies to topmost scrollable under cursor. Vertical wheel
@@ -1673,6 +1736,108 @@ function resolveBg(spec: BgSpec, hotT: number, activeT: number): string {
   return spec;
 }
 
+// record a drawn text line for page selection, and draw its selection
+// highlight behind the glyphs (call before fillText). Also shows a text
+// cursor when hovering selectable text that nothing else has claimed.
+function recordTextRun(
+  text: string,
+  x: number,
+  y: number,
+  h: number,
+  font: string,
+) {
+  if (!ctx) return;
+  const idx = textRuns.length;
+  textRuns.push({ text, x, y, h, font });
+
+  if (pageSelLo && pageSelHi && idx >= pageSelLo.run && idx <= pageSelHi.run) {
+    const cs = idx === pageSelLo.run ? pageSelLo.off : 0;
+    const ce = idx === pageSelHi.run ? pageSelHi.off : text.length;
+    if (ce > cs) {
+      ctx.font = font;
+      const preW = ctx.measureText(text.slice(0, cs)).width;
+      const selW = ctx.measureText(text.slice(cs, ce)).width;
+      ctx.fillStyle = SELECTION_BG;
+      ctx.fillRect(x + preW, y - h / 2, selW, h);
+    }
+  }
+
+  if (
+    pageSelEnabled &&
+    nextHot === null &&
+    nextCursor === null &&
+    mouse.onCanvas &&
+    mouse.y >= y - h / 2 &&
+    mouse.y <= y + h / 2
+  ) {
+    ctx.font = font;
+    if (mouse.x >= x && mouse.x <= x + ctx.measureText(text).width) {
+      nextCursor = "text";
+    }
+  }
+}
+
+// nearest run + char offset to a point (used while dragging a selection)
+function pageCaretAt(mx: number, my: number): RunPos | null {
+  if (textRuns.length === 0 || !ctx) return null;
+  let best = -1;
+  let bestDy = Infinity;
+  for (let i = 0; i < textRuns.length; i++) {
+    const r = textRuns[i]!;
+    const dy =
+      my < r.y - r.h / 2
+        ? r.y - r.h / 2 - my
+        : my > r.y + r.h / 2
+          ? my - (r.y + r.h / 2)
+          : 0;
+    if (dy < bestDy) {
+      bestDy = dy;
+      best = i;
+    }
+  }
+  if (best < 0) return null;
+  const r = textRuns[best]!;
+  return { run: best, off: caretFromX(r.text, r.font, mx - r.x) };
+}
+
+// strict hit (point actually on a text glyph row) for starting a selection
+function pageSelStartHit(mx: number, my: number): RunPos | null {
+  if (!ctx) return null;
+  for (let i = 0; i < textRuns.length; i++) {
+    const r = textRuns[i]!;
+    if (my < r.y - r.h / 2 || my > r.y + r.h / 2) continue;
+    ctx.font = r.font;
+    if (mx >= r.x - 1 && mx <= r.x + ctx.measureText(r.text).width + 1) {
+      return { run: i, off: caretFromX(r.text, r.font, mx - r.x) };
+    }
+  }
+  return null;
+}
+
+// concatenated text of the current page selection (runs joined by newlines)
+function pageSelectionText(): string {
+  if (!pageSelAnchor || !pageSelFocus) return "";
+  let lo = pageSelAnchor;
+  let hi = pageSelFocus;
+  if (lo.run > hi.run || (lo.run === hi.run && lo.off > hi.off)) {
+    [lo, hi] = [hi, lo];
+  }
+  if (lo.run === hi.run) {
+    const r = textRuns[lo.run];
+    return r ? r.text.slice(lo.off, hi.off) : "";
+  }
+  const parts: string[] = [];
+  const first = textRuns[lo.run];
+  if (first) parts.push(first.text.slice(lo.off));
+  for (let i = lo.run + 1; i < hi.run; i++) {
+    const r = textRuns[i];
+    if (r) parts.push(r.text);
+  }
+  const last = textRuns[hi.run];
+  if (last) parts.push(last.text.slice(0, hi.off));
+  return parts.join("\n");
+}
+
 function drawNode(node: Node, scrollAccumY: number, scrollAccumX = 0) {
   if (!ctx) return;
 
@@ -1806,8 +1971,16 @@ function drawNode(node: Node, scrollAccumY: number, scrollAccumX = 0) {
       );
     }
 
-    ctx.fillStyle = node.textColor ?? FG;
-    ctx.textAlign = node.textAlign;
+    // plain left-aligned text outside any clickable subtree is page-selectable:
+    // record each visual line (which also paints its selection highlight)
+    const selectable =
+      pageSelEnabled &&
+      node.textAlign === "left" &&
+      !node.clickable &&
+      node.caretAt === undefined &&
+      node.selStart === undefined &&
+      inClickable === 0;
+
     const tx =
       node.textAlign === "center"
         ? rx + rw / 2
@@ -1815,10 +1988,20 @@ function drawNode(node: Node, scrollAccumY: number, scrollAccumX = 0) {
     if (node.wrappedLines) {
       const lineH = fontHeight(node.font);
       const startY = ry + node.padding.t + lineH / 2;
+      if (selectable) {
+        for (let i = 0; i < node.wrappedLines.length; i++) {
+          recordTextRun(node.wrappedLines[i]!, tx, startY + i * lineH, lineH, node.font);
+        }
+      }
+      ctx.fillStyle = node.textColor ?? FG;
+      ctx.textAlign = node.textAlign;
       for (let i = 0; i < node.wrappedLines.length; i++) {
         ctx.fillText(node.wrappedLines[i]!, tx, startY + i * lineH);
       }
     } else {
+      if (selectable) recordTextRun(node.text, tx, ry + rh / 2, fh, node.font);
+      ctx.fillStyle = node.textColor ?? FG;
+      ctx.textAlign = node.textAlign;
       ctx.fillText(node.text, tx, ry + rh / 2);
     }
 
@@ -1864,10 +2047,12 @@ function drawNode(node: Node, scrollAccumY: number, scrollAccumX = 0) {
     childScrollY += s.scrollY;
     childScrollX += s.scrollX;
   }
+  if (node.clickable) inClickable++;
   for (const c of node.children) {
     if (c.isAbs) deferredAbs.push(c);
     else drawNode(c, childScrollY, childScrollX);
   }
+  if (node.clickable) inClickable--;
   if (doClip) ctx.restore();
   if (node.scrollable && s) {
     drawScrollbar(rx, ry, rw, rh, s, node.id);
