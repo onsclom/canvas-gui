@@ -27,4 +27,4 @@ Self-critical list of things to revisit. Mark with `- [x]` when done.
 
 ## Demos to revisit
 
-- [ ] Kitchen sink should showcase: cursor, modals, windows, text input + area, animations, select, keyboard nav. Currently it predates most of these
+- [x] Kitchen sink should showcase: cursor, modals, windows, text input + area, animations, select, keyboard nav. Currently it predates most of these

@@ -52,6 +52,19 @@ const state = {
   hardcore: false,
   feed: genFeed(40),
   selectedId: -1,
+  name: "",
+  email: "",
+  bio: "",
+  framework: "canvas-gui" as
+    | "canvas-gui"
+    | "react"
+    | "svelte"
+    | "vue"
+    | "solid",
+  modalOpen: false,
+  miniOpen: false,
+  springTarget: 0,
+  springCurrent: 0,
 };
 
 ui.onCommand((name, args) => {
@@ -68,6 +81,18 @@ ui.onCommand((name, args) => {
     case "kitchen.toggle-hardcore":
       state.hardcore = !state.hardcore;
       break;
+    case "kitchen.modal-open":
+      state.modalOpen = true;
+      break;
+    case "kitchen.modal-close":
+      state.modalOpen = false;
+      break;
+    case "kitchen.mini-toggle":
+      state.miniOpen = !state.miniOpen;
+      break;
+    case "kitchen.spring-bump":
+      state.springTarget += args!["d"] as number;
+      break;
     case "kitchen.reset":
       state.size = 1;
       state.volume = 0.7;
@@ -76,6 +101,13 @@ ui.onCommand((name, args) => {
       state.notifications = false;
       state.hardcore = false;
       state.selectedId = -1;
+      state.name = "";
+      state.email = "";
+      state.bio = "";
+      state.framework = "canvas-gui";
+      state.modalOpen = false;
+      state.miniOpen = false;
+      state.springTarget = 0;
       break;
   }
 });
@@ -86,6 +118,13 @@ export function tick(ctx: CanvasRenderingContext2D, dt: number) {
 
   ctx.fillStyle = "#030712";
   ctx.fillRect(0, 0, w, h);
+
+  // animate the spring counter every frame
+  state.springCurrent = ui.smooth(
+    state.springCurrent,
+    state.springTarget,
+    14,
+  );
 
   ui.col(
     {
@@ -133,6 +172,75 @@ export function tick(ctx: CanvasRenderingContext2D, dt: number) {
       });
     },
   );
+
+  // floating mini window (toggleable)
+  if (state.miniOpen) {
+    ui.window(
+      {
+        id: "kitchen-mini",
+        title: "Hello from a window",
+        defaultX: 320,
+        defaultY: 200,
+        defaultW: 280,
+        defaultH: 150,
+      },
+      () => {
+        ui.label("Drag the title bar to move me.", {
+          wrap: true,
+          width: "grow",
+        });
+        ui.label("Resize via the ⇲ corner.", { wrap: true, width: "grow" });
+        ui.spacer({ height: 4 });
+        if (
+          ui.button("Close", {
+            id: "kmini-close",
+            width: "grow",
+            height: 28,
+            radius: BUTTON_RADIUS,
+          }).clicked
+        ) {
+          ui.cmd("kitchen.mini-toggle");
+        }
+      },
+    );
+  }
+
+  // modal overlay (toggleable)
+  if (state.modalOpen) {
+    const m = ui.modal({ id: "kitchen-modal" }, () => {
+      ui.col(
+        {
+          width: 360,
+          padding: 22,
+          gap: 14,
+          bg: CARD_BG,
+          border: CARD_BORDER,
+          radius: 12,
+          align: "stretch",
+        },
+        () => {
+          ui.withFont("bold 18px system-ui, sans-serif", () => {
+            ui.label("Modal example");
+          });
+          ui.label(
+            "Backdrop covers everything; clicking outside this card dismisses.",
+            { wrap: true, width: "grow" },
+          );
+          if (
+            ui.button("OK", {
+              id: "kmodal-ok",
+              width: "grow",
+              height: 36,
+              radius: BUTTON_RADIUS,
+            }).clicked
+          ) {
+            ui.cmd("kitchen.modal-close");
+          }
+        },
+      );
+    });
+    if (m.clicked) ui.cmd("kitchen.modal-close");
+  }
 }
 
 function leftPanel() {
@@ -210,6 +318,114 @@ function leftPanel() {
       state.detail = ui.slider("Detail", state.detail, 0, 1, {
         radius: BUTTON_RADIUS,
       }).value;
+
+      divider();
+
+      sectionHeader("Text input");
+      state.name = ui.textInput(state.name, {
+        id: "k-name",
+        placeholder: "Your name",
+        width: "grow",
+      }).value;
+      state.email = ui.textInput(state.email, {
+        id: "k-email",
+        placeholder: "you@example.com",
+        width: "grow",
+      }).value;
+      ui.withTextColor(MUTED, () => {
+        ui.withFont("11px ui-monospace, monospace", () => {
+          ui.label(
+            "Hold Backspace for repeat. Ctrl+← / Ctrl+Backspace move/delete by word.",
+            { wrap: true, width: "grow" },
+          );
+        });
+      });
+
+      divider();
+
+      sectionHeader("Multi-line text");
+      state.bio = ui.textArea(state.bio, {
+        id: "k-bio",
+        placeholder: "A few lines about yourself…",
+        width: "grow",
+      }).value;
+
+      divider();
+
+      sectionHeader("Select");
+      ui.row({ gap: 12, align: "center" }, () => {
+        state.framework = ui.select(
+          state.framework,
+          ["canvas-gui", "react", "svelte", "vue", "solid"] as const,
+          { id: "k-framework", width: 200 },
+        ).value;
+        ui.withTextColor(MUTED, () => {
+          ui.label(`= ${state.framework}`);
+        });
+      });
+
+      divider();
+
+      sectionHeader("Floating layers");
+      ui.row({ gap: 8 }, () => {
+        if (
+          ui.button("Show modal", {
+            id: "k-show-modal",
+            radius: BUTTON_RADIUS,
+          }).clicked
+        ) {
+          ui.cmd("kitchen.modal-open");
+        }
+        if (
+          ui.button(state.miniOpen ? "Hide window" : "Open window", {
+            id: "k-show-window",
+            radius: BUTTON_RADIUS,
+          }).clicked
+        ) {
+          ui.cmd("kitchen.mini-toggle");
+        }
+      });
+
+      divider();
+
+      sectionHeader("Spring animation");
+      ui.row({ width: "grow", gap: 12, align: "center" }, () => {
+        ui.col({ width: 90, align: "center" }, () => {
+          ui.withTextColor(MUTED, () => {
+            ui.withFont("9px system-ui, sans-serif", () => {
+              ui.label("TARGET");
+            });
+          });
+          ui.withFont("bold 16px ui-monospace, monospace", () => {
+            ui.label(state.springTarget.toString());
+          });
+          ui.withTextColor(MUTED, () => {
+            ui.withFont("9px system-ui, sans-serif", () => {
+              ui.label("CURRENT");
+            });
+          });
+          ui.withTextColor("#4ade80", () => {
+            ui.withFont("bold 22px ui-monospace, monospace", () => {
+              ui.label(state.springCurrent.toFixed(1));
+            });
+          });
+        });
+        ui.row({ width: "grow", gap: 6 }, () => {
+          for (const d of [-10, -1, 1, 10]) {
+            const label = d > 0 ? `+${d}` : `${d}`;
+            if (
+              ui.button(label, {
+                id: `k-spring-${d}`,
+                width: "grow",
+                height: 30,
+                radius: BUTTON_RADIUS,
+              }).clicked
+            ) {
+              ui.cmd("kitchen.spring-bump", { d });
+            }
+          }
+        });
+      });
 
       divider();
 
