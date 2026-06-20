@@ -38,6 +38,8 @@ export function tick(ctx: CanvasRenderingContext2D, dt: number) {
     },
     () => {
       ui.label(`fps ${(1000 / dt).toFixed(0)}`);
+      ui.label(`fps ${(1000 / dt).toFixed(0)}`);
+      ui.label(`fps ${(1000 / dt).toFixed(0)}`);
       if (
         ui.button(state.paused ? "Play" : "Pause", {
           id: "pause",

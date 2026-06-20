@@ -330,11 +330,17 @@ export function frameEnd() {
 
   // press / release event queueing
   if (mouse.justLeftClicked && hot !== null && active === null) {
-    active = hot;
-    const s = getState(active);
+    const id: string = hot;
+    active = id;
+    const s = getState(id);
     s.pressX = mouse.x;
     s.pressY = mouse.y;
-    pendingPresses.add(active);
+    // scrollbar thumbs need to remember the container's scrollY at press time
+    if (id.endsWith("#thumb")) {
+      const containerState = cache.get(id.slice(0, -"#thumb".length));
+      if (containerState) s.scrollY = containerState.scrollY;
+    }
+    pendingPresses.add(id);
   }
   if (mouse.justLeftReleased && active !== null) {
     pendingReleases.add(active);
@@ -869,30 +875,94 @@ function drawNode(node: Node, scrollAccum: number) {
   }
   if (clipped) {
     ctx.restore();
-    drawScrollbar(rx, ry, rw, rh, s!.contentH, s!.scrollY);
+    drawScrollbar(rx, ry, rw, rh, s!, node.id);
   }
 }
+
+const THUMB_W_HOT = 8; // widen the hover/active thumb a touch
+const THUMB_HIT_PAD = 4; // expand the hit area horizontally for easier grabbing
 
 function drawScrollbar(
   rx: number,
   ry: number,
   rw: number,
   rh: number,
-  contentH: number,
-  scrollY: number,
+  containerState: WidgetState,
+  containerId: string,
 ) {
-  if (!ctx || contentH <= rh) return;
+  if (!ctx) return;
+  const contentH = containerState.contentH;
+  if (contentH <= rh) return;
+
   const trackX = rx + rw - SCROLLBAR_W - SCROLLBAR_MARGIN;
   const trackY = ry + SCROLLBAR_MARGIN;
   const trackH = rh - SCROLLBAR_MARGIN * 2;
+  const maxScroll = contentH - rh;
+  const thumbH = Math.max(20, (trackH * rh) / contentH);
+  const thumbY =
+    trackY + (trackH - thumbH) * (containerState.scrollY / Math.max(1, maxScroll));
+
+  const thumbId = `${containerId}#thumb`;
+  const ts = getState(thumbId);
+  ts.lastTouched = frameIdx;
+  // store the visible rect for hit-testing; widen by THUMB_HIT_PAD on each side
+  ts.rect = {
+    x: trackX - THUMB_HIT_PAD,
+    y: thumbY,
+    w: SCROLLBAR_W + THUMB_HIT_PAD * 2,
+    h: thumbH,
+  };
+
+  const isActive = active === thumbId;
+  const overThumb = hit(ts.rect);
+  const trackRect = {
+    x: trackX - THUMB_HIT_PAD,
+    y: trackY,
+    w: SCROLLBAR_W + THUMB_HIT_PAD * 2,
+    h: trackH,
+  };
+  const overTrack = !overThumb && hit(trackRect);
+
+  if (overThumb || isActive) {
+    nextHot = thumbId;
+    nextCursor = isActive ? "grabbing" : "grab";
+  }
+
+  // dragging — thumb tracks the mouse
+  if (isActive && mouse.leftClickDown) {
+    const dy = mouse.y - ts.pressY;
+    const scale = trackH - thumbH > 0 ? maxScroll / (trackH - thumbH) : 0;
+    containerState.scrollY = clamp(
+      ts.scrollY + dy * scale, // ts.scrollY = scrollY captured at press
+      0,
+      maxScroll,
+    );
+  }
+
+  // click on empty track → page-jump
+  if (overTrack && mouse.justLeftClicked && active === null) {
+    const delta = mouse.y < thumbY ? -rh : rh;
+    containerState.scrollY = clamp(
+      containerState.scrollY + delta,
+      0,
+      maxScroll,
+    );
+  }
+
+  // track
   ctx.fillStyle = "rgba(255,255,255,0.08)";
   setRectPath(trackX, trackY, SCROLLBAR_W, trackH, SCROLLBAR_W / 2);
   ctx.fill();
-  const thumbH = Math.max(20, (trackH * rh) / contentH);
-  const maxScroll = contentH - rh;
-  const thumbY =
-    trackY + (trackH - thumbH) * (scrollY / Math.max(1, maxScroll));
-  ctx.fillStyle = "rgba(255,255,255,0.45)";
-  setRectPath(trackX, thumbY, SCROLLBAR_W, thumbH, SCROLLBAR_W / 2);
+
+  // thumb (wider/brighter when hot or active)
+  const thumbHot = nextHot === thumbId;
+  const thumbW = thumbHot ? THUMB_W_HOT : SCROLLBAR_W;
+  const thumbDx = thumbHot ? -(THUMB_W_HOT - SCROLLBAR_W) / 2 : 0;
+  ctx.fillStyle = isActive
+    ? "rgba(255,255,255,0.75)"
+    : thumbHot
+      ? "rgba(255,255,255,0.6)"
+      : "rgba(255,255,255,0.45)";
+  setRectPath(trackX + thumbDx, thumbY, thumbW, thumbH, thumbW / 2);
   ctx.fill();
 }
