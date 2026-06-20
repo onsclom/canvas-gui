@@ -20,6 +20,7 @@ const state = {
   modalOpen: false,
   name: "",
   email: "",
+  bio: "",
 };
 
 let _canvasW = 0;
@@ -682,6 +683,30 @@ export function tick(ctx: CanvasRenderingContext2D, _dt: number) {
             ui.withFont("12px ui-monospace, monospace", () => {
               ui.label(`name = ${JSON.stringify(state.name)}`);
               ui.label(`email = ${JSON.stringify(state.email)}`);
+            });
+          });
+        },
+      );
+
+      section(
+        "Multi-line text",
+        "ui.textArea() is the multi-line cousin. Enter inserts a newline. Up/Down move the caret between lines, preserving column.",
+        [
+          "state.bio = ui.textArea(state.bio, {",
+          '  id: "bio",',
+          '  placeholder: "Tell us about yourself…",',
+          '  width: "grow",',
+          "}).value;",
+        ],
+        () => {
+          state.bio = ui.textArea(state.bio, {
+            id: "doc-bio",
+            placeholder: "Tell us about yourself…",
+            width: "grow",
+          }).value;
+          ui.withTextColor(MUTED, () => {
+            ui.withFont("12px ui-monospace, monospace", () => {
+              ui.label(`${state.bio.length} chars, ${state.bio.split("\n").length} lines`);
             });
           });
         },

@@ -574,6 +574,136 @@ export function textInput(
   return { ...c, value: next };
 }
 
+// Multi-line text input. Enter inserts a newline. Up/Down move the caret
+// between lines, preserving column. Caret rendering uses a per-line label
+// with caretAt.
+export function textArea(
+  value: string,
+  opts: NodeOpts & { placeholder?: string } = {},
+): TextInputComm {
+  const id = opts.id ?? "text-area";
+  const s = getState(id);
+  const isFocused = focusedInput === id;
+  let next = value;
+  const font = opts.font ?? top(fontStack) ?? FONT;
+
+  if (isFocused) {
+    for (const k of keysJustPressed) {
+      if (k === "Backspace") {
+        if (s.caret > 0) {
+          next = next.slice(0, s.caret - 1) + next.slice(s.caret);
+          s.caret--;
+        }
+      } else if (k === "Delete") {
+        if (s.caret < next.length) {
+          next = next.slice(0, s.caret) + next.slice(s.caret + 1);
+        }
+      } else if (k === "Enter") {
+        next = next.slice(0, s.caret) + "\n" + next.slice(s.caret);
+        s.caret++;
+      } else if (k === "ArrowLeft") {
+        s.caret = Math.max(0, s.caret - 1);
+      } else if (k === "ArrowRight") {
+        s.caret = Math.min(next.length, s.caret + 1);
+      } else if (k === "ArrowUp") {
+        const lc = caretLineCol(next, s.caret);
+        if (lc.line > 0) s.caret = lineColToIndex(next, lc.line - 1, lc.col);
+      } else if (k === "ArrowDown") {
+        const lc = caretLineCol(next, s.caret);
+        const lines = next.split("\n");
+        if (lc.line < lines.length - 1) {
+          s.caret = lineColToIndex(next, lc.line + 1, lc.col);
+        }
+      } else if (k === "Home") {
+        const lc = caretLineCol(next, s.caret);
+        s.caret = lineColToIndex(next, lc.line, 0);
+      } else if (k === "End") {
+        const lc = caretLineCol(next, s.caret);
+        const len = next.split("\n")[lc.line]?.length ?? 0;
+        s.caret = lineColToIndex(next, lc.line, len);
+      } else if (k === "Escape") {
+        focusedInput = null;
+      } else if (k.length === 1) {
+        next = next.slice(0, s.caret) + k + next.slice(s.caret);
+        s.caret++;
+      }
+    }
+  }
+
+  const lines = next.split("\n");
+  const lc = caretLineCol(next, s.caret);
+  const empty = next.length === 0;
+
+  const c = col(
+    {
+      padding: { l: 10, r: 10, t: 7, b: 7 },
+      gap: 1,
+      ...opts,
+      id,
+      clickable: true,
+      cursor: opts.cursor ?? "text",
+      bg: opts.bg ?? "#0b0f17",
+      border: opts.border ?? (isFocused ? "#4ade80" : "#374151"),
+      radius: opts.radius ?? 5,
+      align: "stretch",
+    },
+    () => {
+      if (empty && opts.placeholder) {
+        node({
+          text: opts.placeholder,
+          textColor: "#6b7280",
+          font,
+        });
+      } else {
+        for (let i = 0; i < lines.length; i++) {
+          node({
+            width: "grow",
+            text: lines[i] === "" ? " " : lines[i]!,
+            textColor: opts.textColor,
+            font,
+            caretAt: isFocused && i === lc.line ? lc.col : undefined,
+          });
+        }
+      }
+    },
+  );
+
+  if (mouse.justLeftClicked) {
+    if (hot === id) focusedInput = id;
+    else if (isFocused) focusedInput = null;
+  }
+
+  return { ...c, value: next };
+}
+
+function caretLineCol(
+  text: string,
+  idx: number,
+): { line: number; col: number } {
+  let line = 0;
+  let col = 0;
+  for (let i = 0; i < idx; i++) {
+    if (text[i] === "\n") {
+      line++;
+      col = 0;
+    } else {
+      col++;
+    }
+  }
+  return { line, col };
+}
+
+function lineColToIndex(text: string, line: number, col: number): number {
+  const lines = text.split("\n");
+  let idx = 0;
+  for (let i = 0; i < line && i < lines.length; i++) {
+    idx += lines[i]!.length + 1;
+  }
+  const targetLen = lines[line]?.length ?? 0;
+  idx += Math.min(col, targetLen);
+  return idx;
+}
+
 // Floating window — draggable title bar + resizable bottom-right corner.
 // Position and size are persisted in the cache by id.
 export type WindowOpts = NodeOpts & {
