@@ -114,10 +114,18 @@ type WidgetState = {
   rect: Rect;
   pressX: number;
   pressY: number;
+  // generic snapshot taken at press; used by sliders, scroll thumbs,
+  // window drag handles, resize grips — anyone who needs "value at press"
+  pressData: { x: number; y: number };
   hotT: number;
   activeT: number;
   scrollY: number;
   contentH: number;
+  // floating-window position + size, persisted across frames by id
+  winX: number;
+  winY: number;
+  winW: number;
+  winH: number;
   lastTouched: number;
 };
 
@@ -232,10 +240,15 @@ function getState(id: string): WidgetState {
       rect: { x: 0, y: 0, w: 0, h: 0 },
       pressX: 0,
       pressY: 0,
+      pressData: { x: 0, y: 0 },
       hotT: 0,
       activeT: 0,
       scrollY: 0,
       contentH: 0,
+      winX: 0,
+      winY: 0,
+      winW: 0,
+      winH: 0,
       lastTouched: frameIdx,
     };
     cache.set(id, s);
@@ -335,10 +348,17 @@ export function frameEnd() {
     const s = getState(id);
     s.pressX = mouse.x;
     s.pressY = mouse.y;
-    // scrollbar thumbs need to remember the container's scrollY at press time
+    // generic press snapshots — anything that needs "container value at press"
+    // looks itself up via a suffix convention
     if (id.endsWith("#thumb")) {
-      const containerState = cache.get(id.slice(0, -"#thumb".length));
-      if (containerState) s.scrollY = containerState.scrollY;
+      const cs = cache.get(id.slice(0, -"#thumb".length));
+      if (cs) s.pressData = { x: cs.scrollY, y: 0 };
+    } else if (id.endsWith("#drag")) {
+      const ws = cache.get(id.slice(0, -"#drag".length));
+      if (ws) s.pressData = { x: ws.winX, y: ws.winY };
+    } else if (id.endsWith("#resize")) {
+      const ws = cache.get(id.slice(0, -"#resize".length));
+      if (ws) s.pressData = { x: ws.winW, y: ws.winH };
     }
     pendingPresses.add(id);
   }
@@ -445,6 +465,109 @@ export function row(opts: NodeOpts, fn: () => void): Comm {
 }
 export function col(opts: NodeOpts, fn: () => void): Comm {
   return node({ ...opts, dir: "col" }, fn);
+}
+
+// Floating window — draggable title bar + resizable bottom-right corner.
+// Position and size are persisted in the cache by id.
+export type WindowOpts = NodeOpts & {
+  title?: string;
+  defaultX?: number;
+  defaultY?: number;
+  defaultW?: number;
+  defaultH?: number;
+  minW?: number;
+  minH?: number;
+};
+
+export function window(opts: WindowOpts, fn: () => void): Comm {
+  const id = opts.id ?? "window";
+  const s = getState(id);
+  if (s.winW === 0 && s.winH === 0) {
+    s.winX = opts.defaultX ?? 80;
+    s.winY = opts.defaultY ?? 80;
+    s.winW = opts.defaultW ?? 320;
+    s.winH = opts.defaultH ?? 240;
+  }
+  const minW = opts.minW ?? 200;
+  const minH = opts.minH ?? 120;
+
+  const dragId = `${id}#drag`;
+  const resizeId = `${id}#resize`;
+
+  // live drag — title bar held + mouse moved
+  const ds = cache.get(dragId);
+  if (ds && active === dragId && mouse.leftClickDown) {
+    s.winX = ds.pressData.x + (mouse.x - ds.pressX);
+    s.winY = ds.pressData.y + (mouse.y - ds.pressY);
+  }
+  // live resize — corner held + mouse moved
+  const rs = cache.get(resizeId);
+  if (rs && active === resizeId && mouse.leftClickDown) {
+    s.winW = Math.max(minW, rs.pressData.x + (mouse.x - rs.pressX));
+    s.winH = Math.max(minH, rs.pressData.y + (mouse.y - rs.pressY));
+  }
+  // clamp inside canvas
+  s.winX = clamp(s.winX, 0, Math.max(0, canvasW - s.winW));
+  s.winY = clamp(s.winY, 0, Math.max(0, canvasH - s.winH));
+
+  const radius = opts.radius ?? 8;
+  return col(
+    {
+      x: s.winX,
+      y: s.winY,
+      width: s.winW,
+      height: s.winH,
+      align: "stretch",
+      ...opts,
+      id,
+      bg: opts.bg ?? "#1f2937",
+      border: opts.border ?? "rgba(255,255,255,0.12)",
+      radius,
+    },
+    () => {
+      // title bar (drag handle)
+      row(
+        {
+          id: dragId,
+          width: "grow",
+          height: 30,
+          padding: { l: 12, r: 12 },
+          gap: 8,
+          bg: "#374151",
+          align: "center",
+          clickable: true,
+          cursor: active === dragId ? "grabbing" : "grab",
+        },
+        () => {
+          label(opts.title ?? "Window");
+        },
+      );
+      // body
+      col(
+        {
+          width: "grow",
+          height: "grow",
+          padding: 12,
+          gap: 8,
+          align: "stretch",
+        },
+        fn,
+      );
+      // resize handle — absolutely positioned in the bottom-right corner
+      button("⇲", {
+        id: resizeId,
+        x: s.winX + s.winW - 18,
+        y: s.winY + s.winH - 18,
+        width: 14,
+        height: 14,
+        bg: "rgba(255,255,255,0.12)",
+        textColor: "rgba(255,255,255,0.55)",
+        font: "12px ui-monospace, monospace",
+        cursor: "nwse-resize",
+        radius: 3,
+      });
+    },
+  );
 }
 
 // Modal — full-canvas backdrop that centers its content on top of everything.
@@ -955,7 +1078,7 @@ function drawScrollbar(
     const dy = mouse.y - ts.pressY;
     const scale = trackH - thumbH > 0 ? maxScroll / (trackH - thumbH) : 0;
     containerState.scrollY = clamp(
-      ts.scrollY + dy * scale, // ts.scrollY = scrollY captured at press
+      ts.pressData.x + dy * scale, // pressData.x = scrollY at press
       0,
       maxScroll,
     );
