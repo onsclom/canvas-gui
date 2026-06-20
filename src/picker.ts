@@ -6,6 +6,7 @@ import { tick as kitchenTick } from "./demos/kitchen";
 import { tick as docsTick } from "./demos/docs";
 import { tick as melodyTick } from "./demos/melody";
 import { tick as windowsTick } from "./demos/windows";
+import { tick as animationsTick } from "./demos/animations";
 
 type DemoKey =
   | "docs"
@@ -14,7 +15,8 @@ type DemoKey =
   | "wordle"
   | "kitchen"
   | "melody"
-  | "windows";
+  | "windows"
+  | "anim";
 
 const demos: Record<
   DemoKey,
@@ -27,6 +29,7 @@ const demos: Record<
   kitchen: { name: "Kitchen", tick: kitchenTick },
   melody: { name: "Melody", tick: melodyTick },
   windows: { name: "Windows", tick: windowsTick },
+  anim: { name: "Anim", tick: animationsTick },
 };
 
 const keys: DemoKey[] = [
@@ -37,6 +40,7 @@ const keys: DemoKey[] = [
   "kitchen",
   "melody",
   "windows",
+  "anim",
 ];
 const state = { current: "orbit" as DemoKey };
 

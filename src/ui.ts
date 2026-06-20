@@ -219,6 +219,20 @@ function expDecay(current: number, target: number, decay: number): number {
   return target + (current - target) * Math.exp(-decay * dtSec);
 }
 
+// Public framerate-independent smoothing. `current` approaches `target`
+// exponentially; higher `decay` settles faster. Uses the current frame's dt.
+export function smooth(current: number, target: number, decay = 12): number {
+  return expDecay(current, target, decay);
+}
+
+// Live mouse position in canvas (CSS) pixels — handy for custom drawing.
+export function mouseX(): number {
+  return mouse.x;
+}
+export function mouseY(): number {
+  return mouse.y;
+}
+
 function parseColor(s: string): [number, number, number] {
   if (s[0] === "#") {
     return [
