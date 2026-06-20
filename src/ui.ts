@@ -183,6 +183,15 @@ function hit(r: Rect) {
   );
 }
 
+function rectInside(inner: Rect, outer: Rect) {
+  return (
+    inner.x >= outer.x &&
+    inner.y >= outer.y &&
+    inner.x + inner.w <= outer.x + outer.w &&
+    inner.y + inner.h <= outer.y + outer.h
+  );
+}
+
 function fontHeight(font: string): number {
   const fh = font.match(/(\d+(?:\.\d+)?)px/);
   return fh ? parseFloat(fh[1]!) : LABEL_H;
@@ -939,15 +948,22 @@ export function window(opts: WindowOpts, fn: () => void): Comm {
   s.winX = clamp(s.winX, 0, Math.max(0, canvasW - s.winW));
   s.winY = clamp(s.winY, 0, Math.max(0, canvasH - s.winH));
 
-  // any click anywhere inside this window's rect raises it
+  // raise this window if last-frame's topmost widget under the cursor is
+  // one of ours. `hot` is set at the end of the previous frame's draw, so
+  // it already reflects z-order — only one window's hot widget can own a
+  // given cursor position at a time. We use rect-inside instead of an id
+  // prefix so widgets with arbitrary user-supplied ids still count.
   const winRect: Rect = {
     x: s.winX,
     y: s.winY,
     w: s.winW,
     h: s.winH,
   };
-  if (mouse.justLeftClicked && hit(winRect)) {
-    s.lastInteraction = frameIdx;
+  if (mouse.justLeftClicked && hot !== null) {
+    const hotState = cache.get(hot);
+    if (hotState && rectInside(hotState.rect, winRect)) {
+      s.lastInteraction = frameIdx;
+    }
   }
 
   return col(

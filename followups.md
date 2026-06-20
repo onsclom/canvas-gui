@@ -2,7 +2,11 @@
 
 Self-critical list of things to revisit. Mark with `- [x]` when done.
 
-## Round 1: text input + select + windows polish (current pass)
+## Round 2: window raise correctness
+
+- [x] Bug: clicking in the overlap of two windows raised *both* (because each window's `hit(winRect)` was true). Same-frame ties + stable sort meant the call-order-later window won, and the click "fell through" to it. Fixed by using rect-inside on last-frame's `hot` widget instead.
+
+## Round 1: text input + select + windows polish
 
 - [x] Text rendering ignores node padding on `textAlign: "left"` — text and caret are drawn at the rect edge, not inset by padding.l
 - [x] Key repeat doesn't work (`keysJustPressed` is edge-only). Need a `keysTyped` set that includes browser auto-repeat
