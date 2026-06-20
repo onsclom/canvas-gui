@@ -70,6 +70,7 @@ export type NodeOpts = {
   font?: string;
   wrap?: boolean;
   fillBar?: number; // 0..1
+  cursor?: string;  // CSS cursor when hovered; defaults to "pointer" for clickable
 };
 
 export type ContainerOpts = NodeOpts;
@@ -99,6 +100,7 @@ type Node = {
   wrap: boolean;
   wrappedLines?: string[];
   fillBar?: number;
+  cursor?: string;
   intrinsicW: number;
   intrinsicH: number;
   children: Node[];
@@ -131,6 +133,7 @@ let hot: string | null = null;
 let active: string | null = null;
 let nextHot: string | null = null;
 let nextScrollTarget: string | null = null;
+let nextCursor: string | null = null;
 let frameIdx = 0;
 const cache = new Map<string, WidgetState>();
 const pendingClicks = new Set<string>();
@@ -300,6 +303,7 @@ export function frameEnd() {
   if (!ctx) return;
   nextHot = null;
   nextScrollTarget = null;
+  nextCursor = null;
   deferredAbs.length = 0;
 
   // phase 1: solve + draw all in-flow roots; abs roots get deferred to the
@@ -341,6 +345,11 @@ export function frameEnd() {
 
   for (const [id, s] of cache) {
     if (s.lastTouched < frameIdx - CACHE_STALE_FRAMES) cache.delete(id);
+  }
+  // sync the DOM cursor to the topmost interactable widget under the cursor
+  const targetCursor = nextCursor ?? "default";
+  if (ctx.canvas.style.cursor !== targetCursor) {
+    ctx.canvas.style.cursor = targetCursor;
   }
   ctx = null;
 }
@@ -389,6 +398,7 @@ function makeNode(opts: NodeOpts): Node {
     font,
     wrap: !!opts.wrap,
     fillBar: opts.fillBar,
+    cursor: opts.cursor ?? (opts.clickable ? "pointer" : undefined),
     intrinsicW,
     intrinsicH,
     children: [],
@@ -501,6 +511,7 @@ export function slider(
     ...opts,
     id,
     clickable: true,
+    cursor: opts.cursor ?? "ew-resize",
     fillBar: t,
     text: display,
     textAlign: opts.textAlign ?? "center",
@@ -789,6 +800,7 @@ function drawNode(node: Node, scrollAccum: number) {
     if (hit(s.rect)) {
       nextHot = node.id;
       if (node.scrollable) nextScrollTarget = node.id;
+      if (node.cursor) nextCursor = node.cursor;
     }
   }
   const hotT = s?.hotT ?? 0;

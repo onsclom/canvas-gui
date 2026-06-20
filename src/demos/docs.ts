@@ -400,6 +400,29 @@ export function tick(ctx: CanvasRenderingContext2D, _dt: number) {
       );
 
       section(
+        "Cursor",
+        'Hovering a clickable widget changes the cursor to "pointer". Sliders show "ew-resize". Override via the cursor opt with any CSS cursor name.',
+        [
+          'ui.button("Pointer");           // default for clickable',
+          'ui.button("Help",   { cursor: "help" });',
+          'ui.button("Move",   { cursor: "move" });',
+          'ui.button("Crosshair", { cursor: "crosshair" });',
+        ],
+        () => {
+          ui.row({ gap: 8, align: "center" }, () => {
+            ui.button("Pointer", { id: "cur-pointer", radius: 5 });
+            ui.button("Help", { id: "cur-help", radius: 5, cursor: "help" });
+            ui.button("Move", { id: "cur-move", radius: 5, cursor: "move" });
+            ui.button("Crosshair", {
+              id: "cur-cross",
+              radius: 5,
+              cursor: "crosshair",
+            });
+          });
+        },
+      );
+
+      section(
         "Text wrapping",
         "Add wrap: true to a label. The label wraps at word boundaries to fit its assigned width. Try resizing the browser to see this paragraph reflow.",
         [
