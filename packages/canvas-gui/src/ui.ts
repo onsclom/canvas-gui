@@ -1200,10 +1200,11 @@ export function onCommand(handler: CmdHandler): void {
 
 // === layout ===
 
-// fit-size lookup. When asking for height, you can pass a knownWidth so
-// wrap-text descendants compute their real wrapped height instead of a
-// single-line intrinsicH (which solveContainer's pass-2 hasn't filled in
-// yet at this point).
+// fit-size lookup. When asking for height with a knownWidth, fitSize
+// propagates the width down so wrap-text descendants compute their
+// real wrapped height. For col containers each child gets the full
+// inner width (cross axis); for row containers we replicate pass-1's
+// grow distribution so each child knows its per-cell allocated width.
 function fitSize(
   node: Node,
   axis: "w" | "h",
@@ -1212,6 +1213,7 @@ function fitSize(
   const spec = axis === "w" ? node.width : node.height;
   if (typeof spec === "number") return spec;
   if (spec === "grow") return 0;
+
   if (node.children.length === 0) {
     if (
       axis === "h" &&
@@ -1228,21 +1230,45 @@ function fitSize(
     }
     return axis === "w" ? node.intrinsicW : node.intrinsicH;
   }
-  const isMain = (axis === "w") === (node.dir === "row");
+
   const inFlow = node.children.filter((c) => !c.isAbs);
-  // propagate width-context to descendants when we know it. for col
-  // containers the child's cross axis IS the width, so it inherits.
-  let childInnerW: number | undefined;
-  if (axis === "h" && knownWidth !== undefined && node.dir === "col") {
-    childInnerW = knownWidth - node.padding.l - node.padding.r;
+  const totalGap = node.gap * Math.max(0, inFlow.length - 1);
+
+  if (axis === "h" && knownWidth !== undefined) {
+    const inner = knownWidth - node.padding.l - node.padding.r;
+    if (node.dir === "col") {
+      let total = 0;
+      for (const c of inFlow) total += fitSize(c, "h", inner);
+      return total + totalGap + node.padding.t + node.padding.b;
+    }
+    let used = 0;
+    let growCount = 0;
+    for (const c of inFlow) {
+      if (typeof c.width === "number") used += c.width;
+      else if (c.width === "fit") used += fitSize(c, "w");
+      else growCount++;
+    }
+    const leftover = Math.max(0, inner - used - totalGap);
+    const perGrow = growCount > 0 ? leftover / growCount : 0;
+    let maxH = 0;
+    for (const c of inFlow) {
+      let cw: number;
+      if (typeof c.width === "number") cw = c.width;
+      else if (c.width === "fit") cw = fitSize(c, "w");
+      else cw = perGrow;
+      maxH = Math.max(maxH, fitSize(c, "h", cw));
+    }
+    return maxH + node.padding.t + node.padding.b;
   }
+
+  const isMain = (axis === "w") === (node.dir === "row");
   let total = 0;
   for (const c of inFlow) {
-    const cs = fitSize(c, axis, childInnerW);
+    const cs = fitSize(c, axis);
     if (isMain) total += cs;
     else total = Math.max(total, cs);
   }
-  if (isMain && inFlow.length > 1) total += node.gap * (inFlow.length - 1);
+  if (isMain) total += totalGap;
   total +=
     axis === "w"
       ? node.padding.l + node.padding.r
