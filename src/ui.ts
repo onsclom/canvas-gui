@@ -1365,8 +1365,7 @@ function drawNode(node: Node, scrollAccum: number) {
     const fh = fontHeight(node.font);
     const before = node.text.slice(0, node.caretAt);
     const offset = ctx.measureText(before).width;
-    const padX = node.clickable || node.bg !== undefined ? BUTTON_PAD_X : 0;
-    const caretX = Math.round(rx + padX + offset);
+    const caretX = Math.round(rx + node.padding.l + offset);
     const caretY = ry + rh / 2 - fh / 2;
     ctx.fillStyle = node.textColor ?? FG;
     ctx.fillRect(caretX, caretY, 1, fh);
@@ -1385,13 +1384,11 @@ function drawNode(node: Node, scrollAccum: number) {
     ctx.font = node.font;
     ctx.fillStyle = node.textColor ?? FG;
     ctx.textAlign = node.textAlign;
-    const tx = node.textAlign === "center" ? rx + rw / 2 : rx;
+    const tx =
+      node.textAlign === "center" ? rx + rw / 2 : rx + node.padding.l;
     if (node.wrappedLines) {
       const lineH = fontHeight(node.font);
-      const padded = node.clickable || node.bg !== undefined;
-      const startY = padded
-        ? ry + BUTTON_PAD_Y + lineH / 2
-        : ry + lineH / 2;
+      const startY = ry + node.padding.t + lineH / 2;
       for (let i = 0; i < node.wrappedLines.length; i++) {
         ctx.fillText(node.wrappedLines[i]!, tx, startY + i * lineH);
       }
