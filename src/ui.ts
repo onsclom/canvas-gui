@@ -655,21 +655,37 @@ export function select<T extends string>(
   const id = opts.id ?? "select";
   const isOpen = openSelect === id;
 
-  // trigger button — chevron rendered as a unicode suffix
-  const trigger = node({
-    height: 32,
-    ...opts,
-    id,
-    clickable: true,
-    bg: opts.bg ?? "auto",
-    text: `${value || "Select…"}   ▾`,
-    textAlign: opts.textAlign ?? "left",
-    radius: opts.radius ?? 5,
-    padding:
-      typeof opts.padding === "object"
-        ? opts.padding
-        : { l: 10, r: 10, t: 7, b: 7 },
-  });
+  // trigger — a horizontal row with the value on the left and a chevron
+  // on the right, separated by a grow spacer
+  const trigger = row(
+    {
+      height: 32,
+      ...opts,
+      id,
+      clickable: true,
+      bg: opts.bg ?? "auto",
+      border: opts.border,
+      radius: opts.radius ?? 5,
+      padding:
+        typeof opts.padding === "object"
+          ? opts.padding
+          : { l: 12, r: 10, t: 0, b: 0 },
+      align: "center",
+      gap: 8,
+    },
+    () => {
+      const empty = !value;
+      withTextColor(empty ? "#9ca3af" : (opts.textColor ?? FG), () => {
+        label(empty ? "Select…" : value);
+      });
+      spacer({ width: "grow" });
+      withTextColor("#9ca3af", () => {
+        withFont("11px system-ui, sans-serif", () => {
+          label(isOpen ? "▴" : "▾");
+        });
+      });
+    },
+  );
   if (trigger.clicked) {
     openSelect = isOpen ? null : id;
   }
@@ -677,14 +693,14 @@ export function select<T extends string>(
   let chosen = value;
   if (isOpen) {
     const r = trigger.rect;
-    const itemH = 30;
+    const itemH = 32;
     col(
       {
         x: r.x,
         y: r.y + r.h + 4,
         width: r.w,
         bg: "#0b0f17",
-        border: "rgba(255,255,255,0.16)",
+        border: "rgba(255,255,255,0.18)",
         radius: 6,
         padding: 4,
         gap: 2,
@@ -700,6 +716,7 @@ export function select<T extends string>(
             height: itemH,
             radius: 4,
             textAlign: "left",
+            padding: { l: 12, r: 12, t: 0, b: 0 },
             bg: isCurrent ? "accent" : "rgba(255,255,255,0)",
             textColor: isCurrent ? "#052e16" : undefined,
           });

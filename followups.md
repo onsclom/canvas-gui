@@ -7,8 +7,8 @@ Self-critical list of things to revisit. Mark with `- [x]` when done.
 - [x] Text rendering ignores node padding on `textAlign: "left"` — text and caret are drawn at the rect edge, not inset by padding.l
 - [x] Key repeat doesn't work (`keysJustPressed` is edge-only). Need a `keysTyped` set that includes browser auto-repeat
 - [x] Text input missing: Ctrl+Backspace (delete word), Ctrl+Arrow (move by word)
-- [ ] Select trigger appends "   ▾" to the text — chevron position drifts with value length. Should be right-aligned via a row+spacer
-- [ ] Select dropdown options use textAlign:left but inherit button's centered conventions — needs explicit padding handling
+- [x] Select trigger appends "   ▾" to the text — chevron position drifts with value length. Should be right-aligned via a row+spacer
+- [x] Select dropdown options use textAlign:left but inherit button's centered conventions — needs explicit padding handling
 - [ ] Windows: too much radius everywhere; simplify (squarer title bar / body, sharp inner content)
 - [ ] Windows: resize handle z-order is wrong, appears clipped or on the wrong layer
 - [ ] Windows: most recently interacted window should rise to the top of the z-stack
