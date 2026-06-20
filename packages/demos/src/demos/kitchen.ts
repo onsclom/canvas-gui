@@ -335,7 +335,9 @@ function leftPanel() {
       ui.withTextColor(MUTED, () => {
         ui.withFont("11px ui-monospace, monospace", () => {
           ui.label(
-            "Hold Backspace for repeat. Ctrl+← / Ctrl+Backspace move/delete by word.",
+            "Double-click a word, triple-click to select all, or drag to select. " +
+              "Shift+arrows extend, Ctrl+A selects all, Ctrl+C/X/V copy/cut/paste. " +
+              "Ctrl+←/Ctrl+Backspace move/delete by word.",
             { wrap: true, width: "grow" },
           );
         });

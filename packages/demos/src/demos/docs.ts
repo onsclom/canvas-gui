@@ -661,7 +661,7 @@ export function tick(ctx: CanvasRenderingContext2D, _dt: number) {
 
       section(
         "Text input",
-        "ui.textInput(value, opts) returns the updated value. Click to focus, type, use arrows / Home / End / Backspace / Delete. Enter or Escape blurs.",
+        "ui.textInput(value, opts) returns the updated value. Full editing: arrows / Home / End, Shift to select, Ctrl for word nav, Ctrl+A select-all, Ctrl+C/X/V clipboard, double/triple-click and drag to select. Long text scrolls horizontally. Enter or Escape blurs.",
         [
           "state.name = ui.textInput(state.name, {",
           '  id: "name",',

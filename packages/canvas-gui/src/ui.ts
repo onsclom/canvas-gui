@@ -10,6 +10,7 @@ const ACCENT_HOT = "#86efac";
 const ACCENT_FG = "#052e16";
 const TRACK = "#0f172a";
 const FOCUS_RING = "#4ade80";
+const SELECTION_BG = "rgba(74,222,128,0.30)";
 
 const BUTTON_PAD_X = 12;
 const BUTTON_PAD_Y = 6;
@@ -78,6 +79,10 @@ export type NodeOpts = {
   focusRing?: string; // keyboard-focus ring color; "none" hides it. defaults to the accent
   press?: boolean;  // animate a slight depress while held; defaults on for button/toggle
   clip?: boolean;   // clip children to this node's (rounded) rect even when not scrollable
+  // text rendering extras — mostly set internally by textInput/textArea
+  selStart?: number; // selection highlight start (char index)
+  selEnd?: number;   // selection highlight end (char index)
+  textScrollX?: number; // horizontal text offset for overflow scrolling
 };
 
 export type ContainerOpts = NodeOpts;
@@ -552,6 +557,9 @@ function makeNode(opts: NodeOpts): Node {
     focusRing: opts.focusRing ?? top(focusRingStack),
     press: opts.press ?? false,
     clip: !!opts.clip,
+    selStart: opts.selStart,
+    selEnd: opts.selEnd,
+    textScrollX: opts.textScrollX,
     intrinsicW,
     intrinsicH,
     children: [],
@@ -594,10 +602,214 @@ export function col(opts: NodeOpts, fn: () => void): Comm {
   return node({ ...opts, dir: "col" }, fn);
 }
 
-// Single-line text input. Click to focus, type. Backspace, arrows, Home,
-// End move the caret. Enter/Escape blur. Returned value reflects the
-// buffer this frame.
+// Single-line text input. Click to focus, type. Full caret + selection model:
+// arrows / Home / End move; Shift extends; Ctrl moves/deletes by word; Ctrl+A
+// selects all; Ctrl+C/X/V copy/cut/paste via the system clipboard. Double-click
+// selects a word, triple-click selects all; click-drag selects a range. Long
+// text scrolls horizontally to keep the caret visible. Enter/Escape blur.
 export type TextInputComm = Comm & { value: string };
+
+// async clipboard paste lands here keyed by input id; consumed next frame
+const pendingPaste = new Map<string, string>();
+
+function selRange(s: WidgetState): [number, number] {
+  return s.caret <= s.selAnchor
+    ? [s.caret, s.selAnchor]
+    : [s.selAnchor, s.caret];
+}
+function hasSel(s: WidgetState): boolean {
+  return s.caret !== s.selAnchor;
+}
+function deleteSel(text: string, s: WidgetState): string {
+  const [a, b] = selRange(s);
+  s.caret = a;
+  s.selAnchor = a;
+  return text.slice(0, a) + text.slice(b);
+}
+
+// map a local x (px from the text origin) to the nearest caret index
+function caretFromX(text: string, font: string, localX: number): number {
+  if (!ctx) return text.length;
+  ctx.font = font;
+  for (let i = 0; i <= text.length; i++) {
+    const w = ctx.measureText(text.slice(0, i)).width;
+    if (w >= localX) {
+      const prevW = i > 0 ? ctx.measureText(text.slice(0, i - 1)).width : 0;
+      return Math.abs(w - localX) < Math.abs(localX - prevW) ? i : i - 1;
+    }
+  }
+  return text.length;
+}
+
+// shared editing core for textInput (multiline=false) and textArea (true).
+// Mutates s.caret / s.selAnchor and returns the new text.
+function editText(
+  text: string,
+  s: WidgetState,
+  id: string,
+  multiline: boolean,
+): string {
+  let next = text;
+  const ctrl = keysDown.has("Control");
+  const shift = keysDown.has("Shift");
+
+  // consume a paste queued by a previous frame's Ctrl+V
+  const pasted = pendingPaste.get(id);
+  if (pasted !== undefined) {
+    pendingPaste.delete(id);
+    if (hasSel(s)) next = deleteSel(next, s);
+    const ins = multiline ? pasted : pasted.replace(/[\r\n]+/g, " ");
+    next = next.slice(0, s.caret) + ins + next.slice(s.caret);
+    s.caret += ins.length;
+    s.selAnchor = s.caret;
+  }
+
+  for (const k of keysTyped) {
+    if (k === "Control" || k === "Shift" || k === "Alt" || k === "Meta") {
+      continue;
+    }
+
+    // clipboard
+    if (ctrl && (k === "c" || k === "C")) {
+      if (hasSel(s)) {
+        const [a, b] = selRange(s);
+        void navigator.clipboard?.writeText(next.slice(a, b));
+      }
+      continue;
+    }
+    if (ctrl && (k === "x" || k === "X")) {
+      if (hasSel(s)) {
+        const [a, b] = selRange(s);
+        void navigator.clipboard?.writeText(next.slice(a, b));
+        next = deleteSel(next, s);
+      }
+      continue;
+    }
+    if (ctrl && (k === "v" || k === "V")) {
+      void navigator.clipboard?.readText().then((t) => {
+        if (t) pendingPaste.set(id, t);
+      });
+      continue;
+    }
+    if (ctrl && (k === "a" || k === "A")) {
+      s.selAnchor = 0;
+      s.caret = next.length;
+      continue;
+    }
+
+    if (k === "Backspace") {
+      if (hasSel(s)) next = deleteSel(next, s);
+      else if (ctrl) {
+        const wb = wordBoundaryBack(next, s.caret);
+        next = next.slice(0, wb) + next.slice(s.caret);
+        s.caret = wb;
+      } else if (s.caret > 0) {
+        next = next.slice(0, s.caret - 1) + next.slice(s.caret);
+        s.caret--;
+      }
+      s.selAnchor = s.caret;
+    } else if (k === "Delete") {
+      if (hasSel(s)) next = deleteSel(next, s);
+      else if (ctrl) {
+        const wf = wordBoundaryForward(next, s.caret);
+        next = next.slice(0, s.caret) + next.slice(wf);
+      } else if (s.caret < next.length) {
+        next = next.slice(0, s.caret) + next.slice(s.caret + 1);
+      }
+      s.selAnchor = s.caret;
+    } else if (k === "ArrowLeft") {
+      if (!shift && hasSel(s)) s.caret = selRange(s)[0];
+      else
+        s.caret = ctrl
+          ? wordBoundaryBack(next, s.caret)
+          : Math.max(0, s.caret - 1);
+      if (!shift) s.selAnchor = s.caret;
+    } else if (k === "ArrowRight") {
+      if (!shift && hasSel(s)) s.caret = selRange(s)[1];
+      else
+        s.caret = ctrl
+          ? wordBoundaryForward(next, s.caret)
+          : Math.min(next.length, s.caret + 1);
+      if (!shift) s.selAnchor = s.caret;
+    } else if (k === "Home") {
+      s.caret = multiline
+        ? lineColToIndex(next, caretLineCol(next, s.caret).line, 0)
+        : 0;
+      if (!shift) s.selAnchor = s.caret;
+    } else if (k === "End") {
+      if (multiline) {
+        const lc = caretLineCol(next, s.caret);
+        const len = next.split("\n")[lc.line]?.length ?? 0;
+        s.caret = lineColToIndex(next, lc.line, len);
+      } else {
+        s.caret = next.length;
+      }
+      if (!shift) s.selAnchor = s.caret;
+    } else if (multiline && k === "ArrowUp") {
+      const lc = caretLineCol(next, s.caret);
+      s.caret = lc.line > 0 ? lineColToIndex(next, lc.line - 1, lc.col) : 0;
+      if (!shift) s.selAnchor = s.caret;
+    } else if (multiline && k === "ArrowDown") {
+      const lc = caretLineCol(next, s.caret);
+      const lines = next.split("\n");
+      s.caret =
+        lc.line < lines.length - 1
+          ? lineColToIndex(next, lc.line + 1, lc.col)
+          : next.length;
+      if (!shift) s.selAnchor = s.caret;
+    } else if (k === "Enter") {
+      if (multiline) {
+        if (hasSel(s)) next = deleteSel(next, s);
+        next = next.slice(0, s.caret) + "\n" + next.slice(s.caret);
+        s.caret++;
+        s.selAnchor = s.caret;
+      } else {
+        focused = null;
+      }
+    } else if (k === "Escape") {
+      focused = null;
+    } else if (k.length === 1 && !ctrl) {
+      if (hasSel(s)) next = deleteSel(next, s);
+      next = next.slice(0, s.caret) + k + next.slice(s.caret);
+      s.caret++;
+      s.selAnchor = s.caret;
+    }
+    s.caret = clamp(s.caret, 0, next.length);
+    s.selAnchor = clamp(s.selAnchor, 0, next.length);
+  }
+  return next;
+}
+
+// place the caret/selection from a click (isClick) or a drag on an input.
+function inputMouse(
+  next: string,
+  s: WidgetState,
+  font: string,
+  padL: number,
+  isClick: boolean,
+) {
+  const localX = mouse.x - (s.rect.x + padL) + s.inputScrollX;
+  const idx = caretFromX(next, font, localX);
+  if (!isClick) {
+    s.caret = idx; // drag-extend: move the caret, keep the anchor
+    return;
+  }
+  const now = performance.now();
+  s.clickCount = now - s.lastClickMs < 400 ? s.clickCount + 1 : 1;
+  s.lastClickMs = now;
+  if (keysDown.has("Shift")) {
+    s.caret = idx; // shift-click extends the existing selection
+  } else if (s.clickCount >= 3) {
+    s.selAnchor = 0;
+    s.caret = next.length;
+  } else if (s.clickCount === 2) {
+    s.selAnchor = wordBoundaryBack(next, Math.min(idx + 1, next.length));
+    s.caret = wordBoundaryForward(next, idx);
+  } else {
+    s.caret = idx;
+    s.selAnchor = idx;
+  }
+}
 
 export function textInput(
   value: string,
@@ -606,58 +818,45 @@ export function textInput(
   const id = opts.id ?? "text-input";
   const s = getState(id);
   const isFocused = focused === id;
-  let next = value;
   const font = opts.font ?? top(fontStack) ?? FONT;
+  const pad = normPadding(opts.padding ?? { l: 10, r: 10, t: 7, b: 7 });
 
-  // process keyboard input while focused (keysTyped includes auto-repeat)
-  if (isFocused) {
-    const ctrl = keysDown.has("Control");
-    for (const k of keysTyped) {
-      if (k === "Control" || k === "Shift") continue;
-      if (k === "Backspace") {
-        if (ctrl) {
-          const wb = wordBoundaryBack(next, s.caret);
-          next = next.slice(0, wb) + next.slice(s.caret);
-          s.caret = wb;
-        } else if (s.caret > 0) {
-          next = next.slice(0, s.caret - 1) + next.slice(s.caret);
-          s.caret--;
-        }
-      } else if (k === "Delete") {
-        if (ctrl) {
-          const wf = wordBoundaryForward(next, s.caret);
-          next = next.slice(0, s.caret) + next.slice(wf);
-        } else if (s.caret < next.length) {
-          next = next.slice(0, s.caret) + next.slice(s.caret + 1);
-        }
-      } else if (k === "ArrowLeft") {
-        s.caret = ctrl
-          ? wordBoundaryBack(next, s.caret)
-          : Math.max(0, s.caret - 1);
-      } else if (k === "ArrowRight") {
-        s.caret = ctrl
-          ? wordBoundaryForward(next, s.caret)
-          : Math.min(next.length, s.caret + 1);
-      } else if (k === "Home") {
-        s.caret = 0;
-      } else if (k === "End") {
-        s.caret = next.length;
-      } else if (k === "Enter" || k === "Escape") {
-        focused = null;
-      } else if (k.length === 1 && !ctrl) {
-        next = next.slice(0, s.caret) + k + next.slice(s.caret);
-        s.caret++;
-      }
+  let next = isFocused ? editText(value, s, id, false) : value;
+
+  // mouse: focus/blur + caret placement + drag/multi-click selection
+  if (mouse.justLeftClicked) {
+    if (hot === id) {
+      focused = id;
+      inputMouse(next, s, font, pad.l, true);
+    } else if (isFocused) {
+      focused = null;
     }
+  } else if (active === id && mouse.leftClickDown && isFocused) {
+    inputMouse(next, s, font, pad.l, false);
   }
 
   const empty = next.length === 0;
   const showPlaceholder = empty && !!opts.placeholder;
   const display = empty ? (opts.placeholder ?? "") : next;
-  const textColor = empty
-    ? "#6b7280"
-    : opts.textColor;
+  const textColor = empty ? "#6b7280" : opts.textColor;
 
+  // horizontal scroll so the caret stays visible inside the field (only while
+  // focused; an unfocused field shows its text from the start)
+  if (ctx && isFocused && !showPlaceholder) {
+    ctx.font = font;
+    const caretPx = ctx.measureText(next.slice(0, s.caret)).width;
+    const innerW = s.rect.w - pad.l - pad.r;
+    if (innerW > 0) {
+      if (caretPx - s.inputScrollX > innerW) s.inputScrollX = caretPx - innerW;
+      if (caretPx - s.inputScrollX < 0) s.inputScrollX = caretPx;
+      const totalW = ctx.measureText(next).width;
+      s.inputScrollX = clamp(s.inputScrollX, 0, Math.max(0, totalW - innerW));
+    }
+  } else {
+    s.inputScrollX = 0;
+  }
+
+  const [sa, sb] = selRange(s);
   const c = node({
     padding: { l: 10, r: 10, t: 7, b: 7 },
     height: 32,
@@ -673,35 +872,10 @@ export function textInput(
     textAlign: opts.textAlign ?? "left",
     font,
     caretAt: isFocused && !showPlaceholder ? s.caret : undefined,
+    textScrollX: showPlaceholder ? undefined : s.inputScrollX,
+    selStart: isFocused && !showPlaceholder && sa !== sb ? sa : undefined,
+    selEnd: isFocused && !showPlaceholder && sa !== sb ? sb : undefined,
   });
-
-  // focus / blur on click
-  if (mouse.justLeftClicked) {
-    if (hot === id) {
-      focused = id;
-      // place caret near click x (rough — assumes monospace-ish spacing is fine
-      // for v1; could measure precisely later)
-      if (ctx) {
-        ctx.font = font;
-        const clickOffset = mouse.x - (s.rect.x + BUTTON_PAD_X);
-        let best = next.length;
-        for (let i = 0; i <= next.length; i++) {
-          const w = ctx.measureText(next.slice(0, i)).width;
-          if (w >= clickOffset) {
-            const prevW =
-              i > 0 ? ctx.measureText(next.slice(0, i - 1)).width : 0;
-            best = Math.abs(w - clickOffset) < Math.abs(clickOffset - prevW)
-              ? i
-              : i - 1;
-            break;
-          }
-        }
-        s.caret = Math.max(0, Math.min(next.length, best));
-      }
-    } else if (isFocused) {
-      focused = null;
-    }
-  }
 
   return { ...c, value: next };
 }
@@ -799,8 +973,9 @@ export function select<T extends string>(
 }
 
 // Multi-line text input. Enter inserts a newline. Up/Down move the caret
-// between lines, preserving column. Caret rendering uses a per-line label
-// with caretAt.
+// between lines preserving column. Shares the full editing model (selection,
+// word nav, clipboard, Ctrl+A) with textInput; selection is highlighted per
+// line. Caret rendering uses a per-line label with caretAt.
 export function textArea(
   value: string,
   opts: NodeOpts & { placeholder?: string } = {},
@@ -808,68 +983,15 @@ export function textArea(
   const id = opts.id ?? "text-area";
   const s = getState(id);
   const isFocused = focused === id;
-  let next = value;
   const font = opts.font ?? top(fontStack) ?? FONT;
 
-  if (isFocused) {
-    const ctrl = keysDown.has("Control");
-    for (const k of keysTyped) {
-      if (k === "Control" || k === "Shift") continue;
-      if (k === "Backspace") {
-        if (ctrl) {
-          const wb = wordBoundaryBack(next, s.caret);
-          next = next.slice(0, wb) + next.slice(s.caret);
-          s.caret = wb;
-        } else if (s.caret > 0) {
-          next = next.slice(0, s.caret - 1) + next.slice(s.caret);
-          s.caret--;
-        }
-      } else if (k === "Delete") {
-        if (ctrl) {
-          const wf = wordBoundaryForward(next, s.caret);
-          next = next.slice(0, s.caret) + next.slice(wf);
-        } else if (s.caret < next.length) {
-          next = next.slice(0, s.caret) + next.slice(s.caret + 1);
-        }
-      } else if (k === "Enter") {
-        next = next.slice(0, s.caret) + "\n" + next.slice(s.caret);
-        s.caret++;
-      } else if (k === "ArrowLeft") {
-        s.caret = ctrl
-          ? wordBoundaryBack(next, s.caret)
-          : Math.max(0, s.caret - 1);
-      } else if (k === "ArrowRight") {
-        s.caret = ctrl
-          ? wordBoundaryForward(next, s.caret)
-          : Math.min(next.length, s.caret + 1);
-      } else if (k === "ArrowUp") {
-        const lc = caretLineCol(next, s.caret);
-        if (lc.line > 0) s.caret = lineColToIndex(next, lc.line - 1, lc.col);
-      } else if (k === "ArrowDown") {
-        const lc = caretLineCol(next, s.caret);
-        const lines = next.split("\n");
-        if (lc.line < lines.length - 1) {
-          s.caret = lineColToIndex(next, lc.line + 1, lc.col);
-        }
-      } else if (k === "Home") {
-        const lc = caretLineCol(next, s.caret);
-        s.caret = lineColToIndex(next, lc.line, 0);
-      } else if (k === "End") {
-        const lc = caretLineCol(next, s.caret);
-        const len = next.split("\n")[lc.line]?.length ?? 0;
-        s.caret = lineColToIndex(next, lc.line, len);
-      } else if (k === "Escape") {
-        focused = null;
-      } else if (k.length === 1 && !ctrl) {
-        next = next.slice(0, s.caret) + k + next.slice(s.caret);
-        s.caret++;
-      }
-    }
-  }
+  const next = isFocused ? editText(value, s, id, true) : value;
 
   const lines = next.split("\n");
   const lc = caretLineCol(next, s.caret);
   const empty = next.length === 0;
+  const [sa, sb] = selRange(s);
+  const showSel = isFocused && sa !== sb;
 
   const c = col(
     {
@@ -883,6 +1005,7 @@ export function textArea(
       border: opts.border ?? (isFocused ? "#4ade80" : "#374151"),
       radius: opts.radius ?? 5,
       align: "stretch",
+      clip: true,
     },
     () => {
       if (empty && opts.placeholder) {
@@ -892,19 +1015,36 @@ export function textArea(
           font,
         });
       } else {
+        let lineStart = 0;
         for (let i = 0; i < lines.length; i++) {
+          const len = lines[i]!.length;
+          // intersect the global selection with this line's char range
+          let selStart: number | undefined;
+          let selEnd: number | undefined;
+          if (showSel) {
+            const lo = Math.max(sa, lineStart);
+            const hi = Math.min(sb, lineStart + len);
+            if (hi > lo) {
+              selStart = lo - lineStart;
+              selEnd = hi - lineStart;
+            }
+          }
           node({
             width: "grow",
             text: lines[i] === "" ? " " : lines[i]!,
             textColor: opts.textColor,
             font,
             caretAt: isFocused && i === lc.line ? lc.col : undefined,
+            selStart,
+            selEnd,
           });
+          lineStart += len + 1; // +1 for the newline
         }
       }
     },
   );
 
+  // mouse: focus/blur (precise caret placement for multi-line is future work)
   if (mouse.justLeftClicked) {
     if (hot === id) focused = id;
     else if (isFocused) focused = null;
@@ -1588,32 +1728,6 @@ function drawNode(node: Node, scrollAccum: number) {
     ctx.stroke();
   }
 
-  // text caret — slides to its target x with expDecay, stays solid for a beat
-  // after a move, then blinks. textScrollX shifts it with the overflow offset.
-  if (node.caretAt !== undefined && node.text !== undefined) {
-    ctx.font = node.font;
-    const fh = fontHeight(node.font);
-    const before = node.text.slice(0, node.caretAt);
-    const targetX = ctx.measureText(before).width;
-    let drawXoff = targetX;
-    if (s) {
-      if (s.caretX < 0) s.caretX = targetX; // first show: snap, don't slide in
-      if (Math.abs(s.caretX - targetX) > 0.5) s.caretShownAt = performance.now();
-      s.caretX = expDecay(s.caretX, targetX, 30);
-      drawXoff = s.caretX;
-    }
-    const sinceMove = s ? performance.now() - s.caretShownAt : 1e9;
-    const blinkOn = Math.floor(performance.now() / 530) % 2 === 0;
-    if (sinceMove < 450 || blinkOn) {
-      const caretX = Math.round(
-        rx + node.padding.l + drawXoff - (node.textScrollX ?? 0),
-      );
-      const caretY = ry + rh / 2 - fh / 2;
-      ctx.fillStyle = node.textColor ?? FG;
-      ctx.fillRect(caretX, caretY, 1.5, fh);
-    }
-  }
-
   // keyboard focus ring — soft animated halo + crisp inner stroke. Color is
   // configurable (focusRing opt / withFocusRing); "none" disables it. Drawn
   // while focusT > 0 so it fades in and out instead of popping.
@@ -1638,11 +1752,44 @@ function drawNode(node: Node, scrollAccum: number) {
   }
 
   if (node.text !== undefined) {
+    const scrollX = node.textScrollX ?? 0;
+    // clip text to the rect when it scrolls or the node opts into clipping, so
+    // overflow and rounded corners are respected.
+    const clipText = node.textScrollX !== undefined || node.clip;
+    if (clipText) {
+      ctx.save();
+      setRectPath(rx, ry, rw, rh, node.radius);
+      ctx.clip();
+    }
     ctx.font = node.font;
+    const fh = fontHeight(node.font);
+
+    // selection highlight (single-line/text nodes; behind the glyphs)
+    if (
+      node.selStart !== undefined &&
+      node.selEnd !== undefined &&
+      node.selEnd > node.selStart &&
+      !node.wrappedLines
+    ) {
+      const preW = ctx.measureText(node.text.slice(0, node.selStart)).width;
+      const selW = ctx.measureText(
+        node.text.slice(node.selStart, node.selEnd),
+      ).width;
+      ctx.fillStyle = SELECTION_BG;
+      ctx.fillRect(
+        rx + node.padding.l + preW - scrollX,
+        ry + rh / 2 - fh / 2,
+        selW,
+        fh,
+      );
+    }
+
     ctx.fillStyle = node.textColor ?? FG;
     ctx.textAlign = node.textAlign;
     const tx =
-      node.textAlign === "center" ? rx + rw / 2 : rx + node.padding.l;
+      node.textAlign === "center"
+        ? rx + rw / 2
+        : rx + node.padding.l - scrollX;
     if (node.wrappedLines) {
       const lineH = fontHeight(node.font);
       const startY = ry + node.padding.t + lineH / 2;
@@ -1652,6 +1799,31 @@ function drawNode(node: Node, scrollAccum: number) {
     } else {
       ctx.fillText(node.text, tx, ry + rh / 2);
     }
+
+    // text caret — slides to its target x with expDecay, stays solid for a
+    // beat after a move, then blinks.
+    if (node.caretAt !== undefined) {
+      const targetX = ctx.measureText(node.text.slice(0, node.caretAt)).width;
+      let drawXoff = targetX;
+      if (s) {
+        if (s.caretX < 0) s.caretX = targetX; // first show: snap, don't slide
+        if (Math.abs(s.caretX - targetX) > 0.5) {
+          s.caretShownAt = performance.now();
+        }
+        s.caretX = expDecay(s.caretX, targetX, 30);
+        drawXoff = s.caretX;
+      }
+      const sinceMove = s ? performance.now() - s.caretShownAt : 1e9;
+      const blinkOn = Math.floor(performance.now() / 530) % 2 === 0;
+      if (sinceMove < 450 || blinkOn) {
+        const caretX = Math.round(rx + node.padding.l + drawXoff - scrollX);
+        const caretY = ry + rh / 2 - fh / 2;
+        ctx.fillStyle = node.textColor ?? FG;
+        ctx.fillRect(caretX, caretY, 1.5, fh);
+      }
+    }
+
+    if (clipText) ctx.restore();
   }
 
   // children: in-flow inside clip, abs deferred to top of z-stack. A node
