@@ -64,10 +64,18 @@ Quick tour:
 - **Widgets**: `button`, `toggle`, `slider`, `label`, `spacer`,
   `textInput`, `textArea`, `select`
 - **Layout helpers**: `withFont`, `withTextColor`, `withWidth`,
-  `withHeight`
+  `withHeight`, `withFocusRing`
 - **Floating layers**: `modal`, `window`
 - **Animation**: `smooth(current, target, decay)` — framerate-independent
-  exponential decay
+  exponential decay. Buttons depress while held; the caret and focus ring
+  animate too.
+- **Text editing**: `textInput` / `textArea` have a full caret + selection
+  model — Shift to extend, Ctrl for word moves, Ctrl+A/C/X/V, double/triple
+  click and drag to select, and horizontal scroll for overflow.
+- **Scrolling**: `scrollable: true` clips overflow and scrolls whichever
+  axis overflows (vertical wheel, Shift+wheel / trackpad for horizontal).
+- **Text selection**: plain labels are selectable like a web page; drag to
+  select, Ctrl+C to copy. Toggle with `setTextSelectable(false)`.
 - **Command buffer**: `cmd(name, args?)` / `onCommand(handler)` for
   deferred state mutations
 
