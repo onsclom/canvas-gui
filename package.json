@@ -1,12 +1,12 @@
 {
-  "name": "canvas-gui",
-  "module": "src/index.ts",
-  "type": "module",
+  "name": "canvas-gui-workspace",
   "private": true,
+  "type": "module",
+  "workspaces": ["packages/*"],
   "scripts": {
-    "dev": "bun src/index.html --console",
-    "build": "bun build src/index.html --outdir=dist --minify",
-    "preview": "bunx serve dist"
+    "dev": "bun --filter canvas-gui-demos dev",
+    "typecheck": "bunx tsc --noEmit",
+    "vendor": "bun ./scripts/vendor.ts"
   },
   "devDependencies": {
     "@types/bun": "latest",

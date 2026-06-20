@@ -1,5 +1,5 @@
-import { keysJustPressed } from "../input";
-import * as ui from "../ui";
+import { keysJustPressed } from "canvas-gui";
+import * as ui from "canvas-gui";
 
 // === constants ===
 const CARD_RADIUS = 8;

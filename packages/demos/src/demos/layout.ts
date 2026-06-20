@@ -1,4 +1,4 @@
-import * as ui from "../ui";
+import * as ui from "canvas-gui";
 
 type Section = "Home" | "Profile" | "Settings" | "About";
 const sections: Section[] = ["Home", "Profile", "Settings", "About"];

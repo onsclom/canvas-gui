@@ -1,4 +1,4 @@
-import * as ui from "../ui";
+import * as ui from "canvas-gui";
 
 const state = {
   brutalVol: 0.6,

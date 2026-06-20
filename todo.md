@@ -1,7 +1,11 @@
-- modals? things blocking other ui?
-- floating windows that can be moved and resized?
-- add cursor state support to ui elements so things like hovering buttons change cursor appearance
-- improve scroll bars so you can click and drag them like real scroll bars
-- more complex widgets like single-line text input, multi-line text input
-- more custom animations with example demos
-- accessiblity? keyboard, game controller navigation
+- convert this project monorepo:
+  - ui "library" as it's own project
+    - right now it's one file but maybe split it into multiple files in parts where it is begging to (just don't split things out too early for no reason!!!)
+    - i want it to be clear when you are changing the ui library code vs example code
+    - perhaps we expose script or some way that people can easily "vendor" this library into their own project? we want people to be able to easily add custom ui elements or edit existing stuff
+  - example project which will be the demo stuff
+  - make a simple landing page for this library. use the library to make the landing page. introduce the library
+    - explain why it exists: no html, no css, immediate mode gui style, no retained mode problems
+    - better defaults than html/css
+    - small js footprint compared to front-end frameworks\
+    - library is meant to be vendored in and editted

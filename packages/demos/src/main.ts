@@ -1,5 +1,4 @@
-import { startLoop } from "./canvas-render-loop";
-import { registerInputListeners } from "./input";
+import { registerInputListeners, startLoop } from "canvas-gui";
 import { tick } from "./picker";
 
 const canvas = document.createElement("canvas");

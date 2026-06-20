@@ -1,5 +1,5 @@
-import { keysJustPressed } from "../input";
-import * as ui from "../ui";
+import { keysJustPressed } from "canvas-gui";
+import * as ui from "canvas-gui";
 
 const WORDS = [
   "ABOUT", "ABOVE", "ABUSE", "AGENT", "ALBUM",

@@ -1,4 +1,4 @@
-import * as ui from "./ui";
+import * as ui from "canvas-gui";
 import { tick as orbitTick } from "./demos/orbit";
 import { tick as layoutTick } from "./demos/layout";
 import { tick as wordleTick } from "./demos/wordle";

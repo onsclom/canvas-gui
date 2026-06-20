@@ -1,4 +1,4 @@
-import * as ui from "../ui";
+import * as ui from "canvas-gui";
 
 const TOP_OFFSET = 50;
 const CARD_RADIUS = 8;

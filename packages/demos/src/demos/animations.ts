@@ -1,4 +1,4 @@
-import * as ui from "../ui";
+import * as ui from "canvas-gui";
 
 const CARD_BG = "#1f2937";
 const CHROME_BG = "#0b0f17";

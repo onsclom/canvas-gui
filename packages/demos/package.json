@@ -1,0 +1,21 @@
+{
+  "name": "canvas-gui-demos",
+  "version": "0.1.0",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "dev": "bun index.html --console",
+    "build": "bun build index.html --outdir=dist --minify",
+    "preview": "bunx serve dist",
+    "typecheck": "bunx tsc --noEmit"
+  },
+  "dependencies": {
+    "canvas-gui": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/bun": "latest"
+  },
+  "peerDependencies": {
+    "typescript": "^5"
+  }
+}
