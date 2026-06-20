@@ -79,6 +79,7 @@ export function tick(ctx: CanvasRenderingContext2D, _dt: number) {
 
 // ─── BRUTALIST ──────────────────────────────────────────────────────
 function brutalist() {
+  ui.withFocusRing("#000", () =>
   ui.col(
     {
       width: "grow",
@@ -163,11 +164,12 @@ function brutalist() {
         });
       });
     },
-  );
+  ));
 }
 
 // ─── TERMINAL ───────────────────────────────────────────────────────
 function terminal() {
+  ui.withFocusRing("#22c55e", () =>
   ui.col(
     {
       width: "grow",
@@ -255,11 +257,12 @@ function terminal() {
         });
       });
     },
-  );
+  ));
 }
 
 // ─── PASTEL ─────────────────────────────────────────────────────────
 function pastel() {
+  ui.withFocusRing("#ec407a", () =>
   ui.col(
     {
       width: "grow",
@@ -340,11 +343,12 @@ function pastel() {
         });
       });
     },
-  );
+  ));
 }
 
 // ─── VAPORWAVE ──────────────────────────────────────────────────────
 function vaporwave() {
+  ui.withFocusRing("#ff2cd1", () =>
   ui.col(
     {
       width: "grow",
@@ -421,5 +425,5 @@ function vaporwave() {
         });
       });
     },
-  );
+  ));
 }

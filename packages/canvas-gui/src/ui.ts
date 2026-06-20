@@ -9,6 +9,7 @@ const ACCENT = "#4ade80";
 const ACCENT_HOT = "#86efac";
 const ACCENT_FG = "#052e16";
 const TRACK = "#0f172a";
+const FOCUS_RING = "#4ade80";
 
 const BUTTON_PAD_X = 12;
 const BUTTON_PAD_Y = 6;
@@ -74,6 +75,9 @@ export type NodeOpts = {
   caretAt?: number; // draw a blinking text caret at this character index
   zOrder?: number;  // higher = drawn later among deferred-abs entries
   windowRoot?: boolean; // marks the outer col of a window for ownership tracking
+  focusRing?: string; // keyboard-focus ring color; "none" hides it. defaults to the accent
+  press?: boolean;  // animate a slight depress while held; defaults on for button/toggle
+  clip?: boolean;   // clip children to this node's (rounded) rect even when not scrollable
 };
 
 export type ContainerOpts = NodeOpts;
@@ -107,6 +111,13 @@ type Node = {
   caretAt?: number;
   zOrder: number;
   windowRoot: boolean;
+  focusRing?: string;
+  press: boolean;
+  clip: boolean;
+  // text-input rendering extras (set by textInput/textArea)
+  selStart?: number; // selection range start (char index) for highlight
+  selEnd?: number;   // selection range end (char index) for highlight
+  textScrollX?: number; // horizontal text offset for overflow scrolling
   intrinsicW: number;
   intrinsicH: number;
   children: Node[];
@@ -125,8 +136,15 @@ type WidgetState = {
   pressData: { x: number; y: number };
   hotT: number;
   activeT: number;
+  focusT: number;
+  // smoothed caret x (px, relative to text origin) + last-move timestamp so
+  // the caret slides between positions and stays solid right after a move
+  caretX: number;
+  caretShownAt: number;
   scrollY: number;
+  scrollX: number;
   contentH: number;
+  contentW: number;
   // floating-window position + size, persisted across frames by id
   winX: number;
   winY: number;
@@ -136,6 +154,14 @@ type WidgetState = {
   lastInteraction: number;
   // text-input caret position
   caret: number;
+  // text-input selection anchor (the fixed end of a selection; caret is the
+  // moving end). selection is empty when selAnchor === caret.
+  selAnchor: number;
+  // horizontal scroll offset for single-line inputs whose text overflows
+  inputScrollX: number;
+  // multi-click tracking (double = word, triple = all)
+  lastClickMs: number;
+  clickCount: number;
   // id of the window subtree this widget was drawn under (null = not inside one)
   ownerWindow: string | null;
   lastTouched: number;
@@ -170,6 +196,7 @@ const textColorStack: string[] = [];
 const widthStack: SizeSpec[] = [];
 const heightStack: SizeSpec[] = [];
 const fontStack: string[] = [];
+const focusRingStack: string[] = [];
 
 const cmdQueue: Array<{ name: string; args?: Record<string, unknown> }> = [];
 const cmdHandlers: CmdHandler[] = [];
@@ -283,14 +310,23 @@ function getState(id: string): WidgetState {
       pressData: { x: 0, y: 0 },
       hotT: 0,
       activeT: 0,
+      focusT: 0,
+      caretX: -1,
+      caretShownAt: 0,
       scrollY: 0,
+      scrollX: 0,
       contentH: 0,
+      contentW: 0,
       winX: 0,
       winY: 0,
       winW: 0,
       winH: 0,
       lastInteraction: 0,
       caret: 0,
+      selAnchor: 0,
+      inputScrollX: 0,
+      lastClickMs: 0,
+      clickCount: 0,
       ownerWindow: null,
       lastTouched: frameIdx,
     };
@@ -513,6 +549,9 @@ function makeNode(opts: NodeOpts): Node {
     caretAt: opts.caretAt,
     zOrder: opts.zOrder ?? 0,
     windowRoot: !!opts.windowRoot,
+    focusRing: opts.focusRing ?? top(focusRingStack),
+    press: opts.press ?? false,
+    clip: !!opts.clip,
     intrinsicW,
     intrinsicH,
     children: [],
@@ -1082,6 +1121,7 @@ export function button(labelText: string, opts: NodeOpts = {}): Comm {
     bg: opts.bg ?? "auto",
     text: labelText,
     textAlign: opts.textAlign ?? "center",
+    press: opts.press ?? true,
   });
 }
 
@@ -1099,6 +1139,7 @@ export function toggle(
     text: labelText,
     textColor: opts.textColor ?? (value ? ACCENT_FG : undefined),
     textAlign: opts.textAlign ?? "center",
+    press: opts.press ?? true,
   });
   return { ...c, value: c.clicked ? !value : value };
 }
@@ -1187,6 +1228,17 @@ export function popFont() {
 }
 export function withFont<T>(f: string, fn: () => T): T {
   return withStack(fontStack, f, fn);
+}
+// Focus-ring color for the keyboard-focus highlight. Pass "none" to hide the
+// ring entirely for a block of widgets (e.g. a themed card with its own look).
+export function pushFocusRing(c: string) {
+  focusRingStack.push(c);
+}
+export function popFocusRing() {
+  focusRingStack.pop();
+}
+export function withFocusRing<T>(c: string, fn: () => T): T {
+  return withStack(focusRingStack, c, fn);
 }
 
 // === command buffer ===
@@ -1478,6 +1530,7 @@ function drawNode(node: Node, scrollAccum: number) {
     const isActive = active === node.id;
     s.hotT = expDecay(s.hotT, isHovering ? 1 : 0, ANIM_DECAY);
     s.activeT = expDecay(s.activeT, isActive ? 1 : 0, ANIM_DECAY);
+    s.focusT = expDecay(s.focusT, focused === node.id ? 1 : 0, ANIM_DECAY);
     // last-wins z-order: latest call with cursor over wins hot
     if (hit(s.rect)) {
       nextHot = node.id;
@@ -1492,6 +1545,20 @@ function drawNode(node: Node, scrollAccum: number) {
   }
   const hotT = s?.hotT ?? 0;
   const activeT = s?.activeT ?? 0;
+
+  // tactile depress — scale the whole node slightly toward its center while
+  // held. Opt in via press: true (button/toggle default it on). The hit rect
+  // (s.rect, set above) stays full-size so the hitbox doesn't shrink.
+  const pressing = node.press && activeT > 0.001;
+  if (pressing) {
+    const sc = 1 - 0.045 * activeT;
+    const ccx = rx + rw / 2;
+    const ccy = ry + rh / 2;
+    ctx.save();
+    ctx.translate(ccx, ccy);
+    ctx.scale(sc, sc);
+    ctx.translate(-ccx, -ccy);
+  }
 
   if (node.bg !== undefined) {
     ctx.fillStyle = resolveBg(node.bg, hotT, activeT);
@@ -1521,29 +1588,53 @@ function drawNode(node: Node, scrollAccum: number) {
     ctx.stroke();
   }
 
-  // blinking caret (text input)
-  if (
-    node.caretAt !== undefined &&
-    node.text !== undefined &&
-    Math.floor(performance.now() / 500) % 2 === 0
-  ) {
+  // text caret — slides to its target x with expDecay, stays solid for a beat
+  // after a move, then blinks. textScrollX shifts it with the overflow offset.
+  if (node.caretAt !== undefined && node.text !== undefined) {
     ctx.font = node.font;
     const fh = fontHeight(node.font);
     const before = node.text.slice(0, node.caretAt);
-    const offset = ctx.measureText(before).width;
-    const caretX = Math.round(rx + node.padding.l + offset);
-    const caretY = ry + rh / 2 - fh / 2;
-    ctx.fillStyle = node.textColor ?? FG;
-    ctx.fillRect(caretX, caretY, 1, fh);
+    const targetX = ctx.measureText(before).width;
+    let drawXoff = targetX;
+    if (s) {
+      if (s.caretX < 0) s.caretX = targetX; // first show: snap, don't slide in
+      if (Math.abs(s.caretX - targetX) > 0.5) s.caretShownAt = performance.now();
+      s.caretX = expDecay(s.caretX, targetX, 30);
+      drawXoff = s.caretX;
+    }
+    const sinceMove = s ? performance.now() - s.caretShownAt : 1e9;
+    const blinkOn = Math.floor(performance.now() / 530) % 2 === 0;
+    if (sinceMove < 450 || blinkOn) {
+      const caretX = Math.round(
+        rx + node.padding.l + drawXoff - (node.textScrollX ?? 0),
+      );
+      const caretY = ry + rh / 2 - fh / 2;
+      ctx.fillStyle = node.textColor ?? FG;
+      ctx.fillRect(caretX, caretY, 1.5, fh);
+    }
   }
 
-  // keyboard focus ring
-  if (focused === node.id && node.id) {
-    ctx.strokeStyle = "#4ade80";
-    ctx.lineWidth = 2;
-    const r = node.radius > 0 ? node.radius + 2 : 0;
-    setRectPath(rx - 2, ry - 2, rw + 4, rh + 4, r);
+  // keyboard focus ring — soft animated halo + crisp inner stroke. Color is
+  // configurable (focusRing opt / withFocusRing); "none" disables it. Drawn
+  // while focusT > 0 so it fades in and out instead of popping.
+  const ring = node.focusRing ?? FOCUS_RING;
+  if (node.id && ring !== "none" && (s?.focusT ?? 0) > 0.01) {
+    const t = s!.focusT;
+    const off = 3;
+    const r2 = node.radius > 0 ? node.radius + off : 4;
+    ctx.save();
+    ctx.strokeStyle = ring;
+    // outer soft halo
+    ctx.globalAlpha = t * 0.22;
+    ctx.lineWidth = 5;
+    setRectPath(rx - off, ry - off, rw + off * 2, rh + off * 2, r2);
     ctx.stroke();
+    // crisp inner ring
+    ctx.globalAlpha = t;
+    ctx.lineWidth = 1.5;
+    setRectPath(rx - off, ry - off, rw + off * 2, rh + off * 2, r2);
+    ctx.stroke();
+    ctx.restore();
   }
 
   if (node.text !== undefined) {
@@ -1563,25 +1654,26 @@ function drawNode(node: Node, scrollAccum: number) {
     }
   }
 
-  // children: in-flow inside clip, abs deferred to top of z-stack
+  // children: in-flow inside clip, abs deferred to top of z-stack. A node
+  // clips its children when scrollable (to hide overflow) or when clip: true
+  // is set explicitly (e.g. a rounded card whose children would otherwise
+  // poke out past the corners).
   let childScroll = scrollAccum;
-  let clipped = false;
-  if (node.scrollable && s) {
-    childScroll += s.scrollY;
+  const doClip = (node.scrollable && !!s) || node.clip;
+  if (doClip) {
     ctx.save();
     setRectPath(rx, ry, rw, rh, node.radius);
     ctx.clip();
-    clipped = true;
   }
+  if (node.scrollable && s) childScroll += s.scrollY;
   for (const c of node.children) {
     if (c.isAbs) deferredAbs.push(c);
     else drawNode(c, childScroll);
   }
-  if (clipped) {
-    ctx.restore();
-    drawScrollbar(rx, ry, rw, rh, s!, node.id);
-  }
+  if (doClip) ctx.restore();
+  if (node.scrollable && s) drawScrollbar(rx, ry, rw, rh, s, node.id);
 
+  if (pressing) ctx.restore();
   currentDrawWindow = prevDrawWindow;
 }
 
