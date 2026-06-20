@@ -804,7 +804,7 @@ export function tick(ctx: CanvasRenderingContext2D, _dt: number) {
 
       section(
         "Keyboard navigation",
-        "Tab / Shift-Tab cycle focus through clickable widgets in depth-first order. Enter activates. Escape blurs. Click also moves focus. Focused widgets get a green ring.",
+        "Tab / Shift-Tab cycle focus through clickable widgets in depth-first order. Enter or Space activates. A focused slider responds to arrows / Home / End. Escape blurs. Click also moves focus. Focused widgets get an animated ring (color via focusRing / withFocusRing).",
         [
           "// happens automatically — try pressing Tab anywhere",
           "// and watch the green focus ring move.",

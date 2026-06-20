@@ -186,6 +186,9 @@ let nextHot: string | null = null;
 let nextScrollTarget: string | null = null;
 let nextCursor: string | null = null;
 let focused: string | null = null;
+// set while building when the focused widget is a text field, so frameEnd
+// doesn't treat Space/Enter as an "activate" (the field consumes them)
+let focusedIsEditable = false;
 const focusList: string[] = [];
 // during draw pass, tracks which window subtree we're currently inside
 // so each widget can record its owning window in s.ownerWindow
@@ -415,6 +418,7 @@ export function frameStart(c: CanvasRenderingContext2D, deltaMs: number) {
   roots = [];
   stack = [];
   frameIdx++;
+  focusedIsEditable = false;
   c.font = FONT;
   c.textBaseline = "middle";
 
@@ -485,11 +489,14 @@ export function frameEnd() {
       h === openId || (h !== null && h.indexOf(openId + "#opt-") === 0);
     if (!hitInside) openSelect = null;
   }
-  // Enter activates the focused widget (text inputs handle Enter themselves
-  // and either insert \n or blur — that's fine, the focus is already gone
-  // by the time we get here, so we'll just inject a click for whatever
-  // remains focused).
-  if (keysJustPressed.has("Enter") && focused && !focused.includes("#")) {
+  // Enter / Space activate the focused widget (a focused text field consumes
+  // them itself, so skip those — focusedIsEditable is set during build).
+  if (
+    (keysJustPressed.has("Enter") || keysJustPressed.has(" ")) &&
+    focused &&
+    !focused.includes("#") &&
+    !focusedIsEditable
+  ) {
     pendingClicks.add(focused);
   }
   // a real mouse click moves focus too
@@ -859,18 +866,17 @@ function editText(
   return next;
 }
 
-// place the caret/selection from a click (isClick) or a drag on an input.
-function inputMouse(
+// place the caret/selection at a resolved char index from a click or drag.
+// double-click selects the word, triple-click the line, Shift-click extends,
+// a drag (isClick=false) moves the caret while keeping the anchor.
+function placeCaret(
   next: string,
   s: WidgetState,
-  font: string,
-  padL: number,
+  idx: number,
   isClick: boolean,
 ) {
-  const localX = mouse.x - (s.rect.x + padL) + s.inputScrollX;
-  const idx = caretFromX(next, font, localX);
   if (!isClick) {
-    s.caret = idx; // drag-extend: move the caret, keep the anchor
+    s.caret = idx;
     return;
   }
   const now = performance.now();
@@ -879,8 +885,10 @@ function inputMouse(
   if (keysDown.has("Shift")) {
     s.caret = idx; // shift-click extends the existing selection
   } else if (s.clickCount >= 3) {
-    s.selAnchor = 0;
-    s.caret = next.length;
+    const lc = caretLineCol(next, idx);
+    const len = next.split("\n")[lc.line]?.length ?? 0;
+    s.selAnchor = lineColToIndex(next, lc.line, 0);
+    s.caret = lineColToIndex(next, lc.line, len);
   } else if (s.clickCount === 2) {
     s.selAnchor = wordBoundaryBack(next, Math.min(idx + 1, next.length));
     s.caret = wordBoundaryForward(next, idx);
@@ -890,6 +898,34 @@ function inputMouse(
   }
 }
 
+// single-line input: map mouse x → caret index, then place it
+function inputMouse(
+  next: string,
+  s: WidgetState,
+  font: string,
+  padL: number,
+  isClick: boolean,
+) {
+  const localX = mouse.x - (s.rect.x + padL) + s.inputScrollX;
+  placeCaret(next, s, caretFromX(next, font, localX), isClick);
+}
+
+// multi-line input: map mouse (x,y) → caret index across lines, then place it
+function textAreaMouse(
+  next: string,
+  s: WidgetState,
+  font: string,
+  pad: Padding,
+  isClick: boolean,
+) {
+  const lines = next.split("\n");
+  const stride = fontHeight(font) + 1; // gap:1 between line nodes
+  const localY = mouse.y - (s.rect.y + pad.t);
+  const line = clamp(Math.floor(localY / stride), 0, lines.length - 1);
+  const col = caretFromX(lines[line]!, font, mouse.x - (s.rect.x + pad.l));
+  placeCaret(next, s, lineColToIndex(next, line, col), isClick);
+}
+
 export function textInput(
   value: string,
   opts: NodeOpts & { placeholder?: string } = {},
@@ -897,6 +933,7 @@ export function textInput(
   const id = opts.id ?? "text-input";
   const s = getState(id);
   const isFocused = focused === id;
+  if (isFocused) focusedIsEditable = true;
   const font = opts.font ?? top(fontStack) ?? FONT;
   const pad = normPadding(opts.padding ?? { l: 10, r: 10, t: 7, b: 7 });
 
@@ -1062,6 +1099,7 @@ export function textArea(
   const id = opts.id ?? "text-area";
   const s = getState(id);
   const isFocused = focused === id;
+  if (isFocused) focusedIsEditable = true;
   const font = opts.font ?? top(fontStack) ?? FONT;
 
   const next = isFocused ? editText(value, s, id, true) : value;
@@ -1123,10 +1161,17 @@ export function textArea(
     },
   );
 
-  // mouse: focus/blur (precise caret placement for multi-line is future work)
+  // mouse: focus/blur + precise caret placement + drag/multi-click selection
+  const pad = normPadding(opts.padding ?? { l: 10, r: 10, t: 7, b: 7 });
   if (mouse.justLeftClicked) {
-    if (hot === id) focused = id;
-    else if (isFocused) focused = null;
+    if (hot === id) {
+      focused = id;
+      textAreaMouse(next, s, font, pad, true);
+    } else if (isFocused) {
+      focused = null;
+    }
+  } else if (active === id && mouse.leftClickDown && isFocused) {
+    textAreaMouse(next, s, font, pad, false);
   }
 
   return { ...c, value: next };
@@ -1385,6 +1430,17 @@ export function slider(
   if (cached && active === id && mouse.leftClickDown && cached.rect.w > 0) {
     const t = clamp((mouse.x - cached.rect.x) / cached.rect.w, 0, 1);
     val = min + (max - min) * t;
+  }
+  // keyboard: a focused slider responds to arrows / Home / End
+  if (focused === id) {
+    const inc = step ?? (max - min) / 100;
+    for (const k of keysTyped) {
+      if (k === "ArrowLeft" || k === "ArrowDown") val -= inc;
+      else if (k === "ArrowRight" || k === "ArrowUp") val += inc;
+      else if (k === "Home") val = min;
+      else if (k === "End") val = max;
+    }
+    val = clamp(val, min, max);
   }
   if (step) val = Math.round(val / step) * step;
   const t = max > min ? (val - min) / (max - min) : 0;
