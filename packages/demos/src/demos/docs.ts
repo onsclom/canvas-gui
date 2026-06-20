@@ -629,6 +629,47 @@ export function tick(ctx: CanvasRenderingContext2D, _dt: number) {
       );
 
       section(
+        "Horizontal scroll",
+        "A scrollable container scrolls whichever axis overflows. A row of wide items scrolls sideways — drag the bottom scrollbar, Shift+wheel, or use a trackpad.",
+        [
+          "ui.row({",
+          "  scrollable: true,",
+          '  width: "grow",',
+          "}, () => {",
+          "  for (const t of tiles) {",
+          "    ui.button(t, { width: 120 });",
+          "  }",
+          "});",
+        ],
+        () => {
+          ui.row(
+            {
+              id: "doc-hscroll",
+              width: "grow",
+              height: 64,
+              padding: 8,
+              gap: 8,
+              bg: "#030712",
+              border: CARD_BORDER,
+              radius: 6,
+              scrollable: true,
+              align: "center",
+            },
+            () => {
+              for (let i = 0; i < 16; i++) {
+                ui.button(`Tile ${i + 1}`, {
+                  id: `doc-tile-${i}`,
+                  width: 110,
+                  height: 40,
+                  radius: 6,
+                });
+              }
+            },
+          );
+        },
+      );
+
+      section(
         "Absolute positioning",
         "Passing x and y pulls a node out of layout flow. Useful for FABs, tooltips, popovers.",
         [

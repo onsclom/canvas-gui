@@ -460,11 +460,24 @@ export function frameEnd() {
     focused = hot;
   }
 
-  // wheel handling — applies to topmost scrollable under cursor
-  if (nextScrollTarget && mouse.wheelDelta !== 0) {
+  // wheel handling — applies to topmost scrollable under cursor. Vertical wheel
+  // scrolls Y; trackpad / Shift+wheel scrolls X. A horizontal-only area also
+  // accepts the vertical wheel so it can be scrolled with a plain mouse.
+  if (
+    nextScrollTarget &&
+    (mouse.wheelDelta !== 0 || mouse.wheelDeltaX !== 0)
+  ) {
     const s = getState(nextScrollTarget);
-    const maxScroll = Math.max(0, s.contentH - s.rect.h);
-    s.scrollY = clamp(s.scrollY + mouse.wheelDelta, 0, maxScroll);
+    const maxY = Math.max(0, s.contentH - s.rect.h);
+    const maxX = Math.max(0, s.contentW - s.rect.w);
+    let dy = mouse.wheelDelta;
+    let dx = mouse.wheelDeltaX;
+    if (dx === 0 && (keysDown.has("Shift") || (maxY === 0 && maxX > 0))) {
+      dx = dy;
+      dy = 0;
+    }
+    if (maxY > 0) s.scrollY = clamp(s.scrollY + dy, 0, maxY);
+    if (maxX > 0) s.scrollX = clamp(s.scrollX + dx, 0, maxX);
   }
 
   // press / release event queueing
@@ -476,7 +489,10 @@ export function frameEnd() {
     s.pressY = mouse.y;
     // generic press snapshots — anything that needs "container value at press"
     // looks itself up via a suffix convention
-    if (id.endsWith("#thumb")) {
+    if (id.endsWith("#thumbH")) {
+      const cs = cache.get(id.slice(0, -"#thumbH".length));
+      if (cs) s.pressData = { x: cs.scrollX, y: 0 };
+    } else if (id.endsWith("#thumb")) {
       const cs = cache.get(id.slice(0, -"#thumb".length));
       if (cs) s.pressData = { x: cs.scrollY, y: 0 };
     } else if (id.endsWith("#drag")) {
@@ -1612,13 +1628,19 @@ function solveContainer(node: Node) {
     if (c.children.length > 0) solveContainer(c);
   }
 
-  // record content size for scrollable; clamp scroll to current bounds
+  // record content size for scrollable (both axes); clamp scroll to bounds.
+  // totalMain is the extent along the layout axis; maxCross the largest child
+  // on the other axis — together they give content width and height.
   if (node.scrollable && node.id) {
     const s = getState(node.id);
-    s.contentH = totalMain + node.padding.t + node.padding.b;
-    const maxScroll = Math.max(0, s.contentH - node.ch);
-    if (s.scrollY > maxScroll) s.scrollY = maxScroll;
-    if (s.scrollY < 0) s.scrollY = 0;
+    let maxCross = 0;
+    for (const c of inFlow) maxCross = Math.max(maxCross, isRow ? c.ch : c.cw);
+    s.contentH =
+      (isRow ? maxCross : totalMain) + node.padding.t + node.padding.b;
+    s.contentW =
+      (isRow ? totalMain : maxCross) + node.padding.l + node.padding.r;
+    s.scrollY = clamp(s.scrollY, 0, Math.max(0, s.contentH - node.ch));
+    s.scrollX = clamp(s.scrollX, 0, Math.max(0, s.contentW - node.cw));
   }
 
   for (const c of node.children) {
@@ -1651,14 +1673,14 @@ function resolveBg(spec: BgSpec, hotT: number, activeT: number): string {
   return spec;
 }
 
-function drawNode(node: Node, scrollAccum: number) {
+function drawNode(node: Node, scrollAccumY: number, scrollAccumX = 0) {
   if (!ctx) return;
 
   const prevDrawWindow = currentDrawWindow;
   if (node.windowRoot && node.id) currentDrawWindow = node.id;
 
-  const rx = node.cx;
-  const ry = node.cy - scrollAccum;
+  const rx = node.cx - scrollAccumX;
+  const ry = node.cy - scrollAccumY;
   const rw = node.cw;
   const rh = node.ch;
 
@@ -1830,20 +1852,27 @@ function drawNode(node: Node, scrollAccum: number) {
   // clips its children when scrollable (to hide overflow) or when clip: true
   // is set explicitly (e.g. a rounded card whose children would otherwise
   // poke out past the corners).
-  let childScroll = scrollAccum;
+  let childScrollY = scrollAccumY;
+  let childScrollX = scrollAccumX;
   const doClip = (node.scrollable && !!s) || node.clip;
   if (doClip) {
     ctx.save();
     setRectPath(rx, ry, rw, rh, node.radius);
     ctx.clip();
   }
-  if (node.scrollable && s) childScroll += s.scrollY;
+  if (node.scrollable && s) {
+    childScrollY += s.scrollY;
+    childScrollX += s.scrollX;
+  }
   for (const c of node.children) {
     if (c.isAbs) deferredAbs.push(c);
-    else drawNode(c, childScroll);
+    else drawNode(c, childScrollY, childScrollX);
   }
   if (doClip) ctx.restore();
-  if (node.scrollable && s) drawScrollbar(rx, ry, rw, rh, s, node.id);
+  if (node.scrollable && s) {
+    drawScrollbar(rx, ry, rw, rh, s, node.id);
+    drawScrollbarH(rx, ry, rw, rh, s, node.id);
+  }
 
   if (pressing) ctx.restore();
   currentDrawWindow = prevDrawWindow;
@@ -1934,5 +1963,89 @@ function drawScrollbar(
       ? "rgba(255,255,255,0.6)"
       : "rgba(255,255,255,0.45)";
   setRectPath(trackX + thumbDx, thumbY, thumbW, thumbH, thumbW / 2);
+  ctx.fill();
+}
+
+function drawScrollbarH(
+  rx: number,
+  ry: number,
+  rw: number,
+  rh: number,
+  containerState: WidgetState,
+  containerId: string,
+) {
+  if (!ctx) return;
+  const contentW = containerState.contentW;
+  if (contentW <= rw) return;
+
+  const trackY = ry + rh - SCROLLBAR_W - SCROLLBAR_MARGIN;
+  const trackX = rx + SCROLLBAR_MARGIN;
+  const trackW = rw - SCROLLBAR_MARGIN * 2;
+  const maxScroll = contentW - rw;
+  const thumbW = Math.max(20, (trackW * rw) / contentW);
+  const thumbX =
+    trackX + (trackW - thumbW) * (containerState.scrollX / Math.max(1, maxScroll));
+
+  const thumbId = `${containerId}#thumbH`;
+  const ts = getState(thumbId);
+  ts.lastTouched = frameIdx;
+  ts.rect = {
+    x: thumbX,
+    y: trackY - THUMB_HIT_PAD,
+    w: thumbW,
+    h: SCROLLBAR_W + THUMB_HIT_PAD * 2,
+  };
+
+  const isActive = active === thumbId;
+  const overThumb = hit(ts.rect);
+  const trackRect = {
+    x: trackX,
+    y: trackY - THUMB_HIT_PAD,
+    w: trackW,
+    h: SCROLLBAR_W + THUMB_HIT_PAD * 2,
+  };
+  const overTrack = !overThumb && hit(trackRect);
+
+  if (overThumb || isActive) {
+    nextHot = thumbId;
+    nextCursor = isActive ? "grabbing" : "grab";
+  }
+
+  // dragging — thumb tracks the mouse
+  if (isActive && mouse.leftClickDown) {
+    const dx = mouse.x - ts.pressX;
+    const scale = trackW - thumbW > 0 ? maxScroll / (trackW - thumbW) : 0;
+    containerState.scrollX = clamp(
+      ts.pressData.x + dx * scale, // pressData.x = scrollX at press
+      0,
+      maxScroll,
+    );
+  }
+
+  // click on empty track → page-jump
+  if (overTrack && mouse.justLeftClicked && active === null) {
+    const delta = mouse.x < thumbX ? -rw : rw;
+    containerState.scrollX = clamp(
+      containerState.scrollX + delta,
+      0,
+      maxScroll,
+    );
+  }
+
+  // track
+  ctx.fillStyle = "rgba(255,255,255,0.08)";
+  setRectPath(trackX, trackY, trackW, SCROLLBAR_W, SCROLLBAR_W / 2);
+  ctx.fill();
+
+  // thumb (taller/brighter when hot or active)
+  const thumbHot = nextHot === thumbId;
+  const thumbH = thumbHot ? THUMB_W_HOT : SCROLLBAR_W;
+  const thumbDy = thumbHot ? -(THUMB_W_HOT - SCROLLBAR_W) / 2 : 0;
+  ctx.fillStyle = isActive
+    ? "rgba(255,255,255,0.75)"
+    : thumbHot
+      ? "rgba(255,255,255,0.6)"
+      : "rgba(255,255,255,0.45)";
+  setRectPath(thumbX, trackY + thumbDy, thumbW, thumbH, thumbH / 2);
   ctx.fill();
 }

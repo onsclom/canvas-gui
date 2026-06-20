@@ -15,6 +15,7 @@ export const mouse = {
   leftClickDown: false,
   rightClickDown: false,
   wheelDelta: 0,
+  wheelDeltaX: 0,
 };
 
 export function resetInput() {
@@ -23,6 +24,7 @@ export function resetInput() {
   mouse.justRightClicked = false;
   mouse.justRightReleased = false;
   mouse.wheelDelta = 0;
+  mouse.wheelDeltaX = 0;
   keysJustPressed.clear();
   keysTyped.clear();
   keysJustReleased.clear();
@@ -65,6 +67,7 @@ export function registerInputListeners(canvas: HTMLCanvasElement) {
 
   canvas.addEventListener("wheel", (e) => {
     mouse.wheelDelta += e.deltaY;
+    mouse.wheelDeltaX += e.deltaX;
   });
 
   canvas.addEventListener("contextmenu", (e) => e.preventDefault());
