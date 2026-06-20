@@ -73,6 +73,7 @@ export type NodeOpts = {
   cursor?: string;  // CSS cursor when hovered; defaults to "pointer" for clickable
   caretAt?: number; // draw a blinking text caret at this character index
   zOrder?: number;  // higher = drawn later among deferred-abs entries
+  windowRoot?: boolean; // marks the outer col of a window for ownership tracking
 };
 
 export type ContainerOpts = NodeOpts;
@@ -105,6 +106,7 @@ type Node = {
   cursor?: string;
   caretAt?: number;
   zOrder: number;
+  windowRoot: boolean;
   intrinsicW: number;
   intrinsicH: number;
   children: Node[];
@@ -134,6 +136,8 @@ type WidgetState = {
   lastInteraction: number;
   // text-input caret position
   caret: number;
+  // id of the window subtree this widget was drawn under (null = not inside one)
+  ownerWindow: string | null;
   lastTouched: number;
 };
 
@@ -152,6 +156,9 @@ let nextScrollTarget: string | null = null;
 let nextCursor: string | null = null;
 let focused: string | null = null;
 const focusList: string[] = [];
+// during draw pass, tracks which window subtree we're currently inside
+// so each widget can record its owning window in s.ownerWindow
+let currentDrawWindow: string | null = null;
 let frameIdx = 0;
 const cache = new Map<string, WidgetState>();
 const pendingClicks = new Set<string>();
@@ -284,6 +291,7 @@ function getState(id: string): WidgetState {
       winH: 0,
       lastInteraction: 0,
       caret: 0,
+      ownerWindow: null,
       lastTouched: frameIdx,
     };
     cache.set(id, s);
@@ -504,6 +512,7 @@ function makeNode(opts: NodeOpts): Node {
     cursor: opts.cursor ?? (opts.clickable ? "pointer" : undefined),
     caretAt: opts.caretAt,
     zOrder: opts.zOrder ?? 0,
+    windowRoot: !!opts.windowRoot,
     intrinsicW,
     intrinsicH,
     children: [],
@@ -950,18 +959,12 @@ export function window(opts: WindowOpts, fn: () => void): Comm {
 
   // raise this window if last-frame's topmost widget under the cursor is
   // one of ours. `hot` is set at the end of the previous frame's draw, so
-  // it already reflects z-order — only one window's hot widget can own a
-  // given cursor position at a time. We use rect-inside instead of an id
-  // prefix so widgets with arbitrary user-supplied ids still count.
-  const winRect: Rect = {
-    x: s.winX,
-    y: s.winY,
-    w: s.winW,
-    h: s.winH,
-  };
+  // it already reflects z-order. Ownership is exact (not geometric): each
+  // widget records the windowRoot it was drawn inside, so an overlapping
+  // widget in the wrong window never qualifies.
   if (mouse.justLeftClicked && hot !== null) {
     const hotState = cache.get(hot);
-    if (hotState && rectInside(hotState.rect, winRect)) {
+    if (hotState && hotState.ownerWindow === id) {
       s.lastInteraction = frameIdx;
     }
   }
@@ -979,6 +982,7 @@ export function window(opts: WindowOpts, fn: () => void): Comm {
       border: opts.border ?? "rgba(255,255,255,0.18)",
       radius: opts.radius ?? 0,
       zOrder: s.lastInteraction,
+      windowRoot: true,
     },
     () => {
       // title bar (drag handle) — no radius, full-width
@@ -1403,6 +1407,9 @@ function resolveBg(spec: BgSpec, hotT: number, activeT: number): string {
 function drawNode(node: Node, scrollAccum: number) {
   if (!ctx) return;
 
+  const prevDrawWindow = currentDrawWindow;
+  if (node.windowRoot && node.id) currentDrawWindow = node.id;
+
   const rx = node.cx;
   const ry = node.cy - scrollAccum;
   const rw = node.cw;
@@ -1411,6 +1418,7 @@ function drawNode(node: Node, scrollAccum: number) {
   const s = node.id ? getState(node.id) : null;
   if (s) {
     s.rect = { x: rx, y: ry, w: rw, h: rh };
+    s.ownerWindow = currentDrawWindow;
     const isHovering = hot === node.id;
     const isActive = active === node.id;
     s.hotT = expDecay(s.hotT, isHovering ? 1 : 0, ANIM_DECAY);
@@ -1518,6 +1526,8 @@ function drawNode(node: Node, scrollAccum: number) {
     ctx.restore();
     drawScrollbar(rx, ry, rw, rh, s!, node.id);
   }
+
+  currentDrawWindow = prevDrawWindow;
 }
 
 const THUMB_W_HOT = 8; // widen the hover/active thumb a touch

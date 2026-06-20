@@ -4,7 +4,8 @@ Self-critical list of things to revisit. Mark with `- [x]` when done.
 
 ## Round 2: window raise correctness
 
-- [x] Bug: clicking in the overlap of two windows raised *both* (because each window's `hit(winRect)` was true). Same-frame ties + stable sort meant the call-order-later window won, and the click "fell through" to it. Fixed by using rect-inside on last-frame's `hot` widget instead.
+- [x] Bug: clicking in the overlap of two windows raised *both* (because each window's `hit(winRect)` was true). Same-frame ties + stable sort meant the call-order-later window won, and the click "fell through" to it. First attempt fixed by using rect-inside on last-frame's `hot` widget.
+- [x] Bug (rect-inside variant): counter's resize button at (winX+winW, winY+winH) sits inside notes' rect too, so rect-inside still raised notes alongside counter and the resize drag fired on a now-hidden Counter. Replaced rect-inside with explicit subtree ownership: each widget records the windowRoot it was drawn inside (`s.ownerWindow`); window() raises only if `hot`'s ownerWindow matches its id.
 
 ## Round 1: text input + select + windows polish
 
