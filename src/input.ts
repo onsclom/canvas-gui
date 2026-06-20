@@ -1,5 +1,8 @@
 export const keysDown = new Set<string>();
+// edge-only (single press, no repeat) — for hotkeys like Tab / Space
 export const keysJustPressed = new Set<string>();
+// includes browser auto-repeat — for text-input character processing
+export const keysTyped = new Set<string>();
 export const keysJustReleased = new Set<string>();
 export const mouse = {
   onCanvas: false,
@@ -21,6 +24,7 @@ export function resetInput() {
   mouse.justRightReleased = false;
   mouse.wheelDelta = 0;
   keysJustPressed.clear();
+  keysTyped.clear();
   keysJustReleased.clear();
 }
 
@@ -66,7 +70,7 @@ export function registerInputListeners(canvas: HTMLCanvasElement) {
   canvas.addEventListener("contextmenu", (e) => e.preventDefault());
 
   document.body.addEventListener("keydown", (e) => {
-    if (e.metaKey || e.ctrlKey || e.altKey) return;
+    if (e.metaKey || e.altKey) return;
     // stop the browser from acting on keys we use internally — Tab would
     // move focus into the URL bar, arrows + space scroll the page
     if (
@@ -75,11 +79,15 @@ export function registerInputListeners(canvas: HTMLCanvasElement) {
       e.key === "ArrowDown" ||
       e.key === "ArrowLeft" ||
       e.key === "ArrowRight" ||
-      e.key === " "
+      e.key === " " ||
+      e.key === "Backspace" ||
+      (e.ctrlKey && (e.key === "a" || e.key === "A"))
     ) {
       e.preventDefault();
     }
     if (!keysDown.has(e.key)) keysJustPressed.add(e.key);
+    // keysTyped includes auto-repeat — every keydown event lands here
+    keysTyped.add(e.key);
     keysDown.add(e.key);
   });
 

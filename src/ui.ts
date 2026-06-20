@@ -1,4 +1,4 @@
-import { keysDown, keysJustPressed, mouse } from "./input";
+import { keysDown, keysJustPressed, keysTyped, mouse } from "./input";
 
 const FONT = "14px system-ui, sans-serif";
 const BG = "#374151";
@@ -543,29 +543,42 @@ export function textInput(
   let next = value;
   const font = opts.font ?? top(fontStack) ?? FONT;
 
-  // process keyboard input while focused
+  // process keyboard input while focused (keysTyped includes auto-repeat)
   if (isFocused) {
-    for (const k of keysJustPressed) {
+    const ctrl = keysDown.has("Control");
+    for (const k of keysTyped) {
+      if (k === "Control" || k === "Shift") continue;
       if (k === "Backspace") {
-        if (s.caret > 0) {
+        if (ctrl) {
+          const wb = wordBoundaryBack(next, s.caret);
+          next = next.slice(0, wb) + next.slice(s.caret);
+          s.caret = wb;
+        } else if (s.caret > 0) {
           next = next.slice(0, s.caret - 1) + next.slice(s.caret);
           s.caret--;
         }
       } else if (k === "Delete") {
-        if (s.caret < next.length) {
+        if (ctrl) {
+          const wf = wordBoundaryForward(next, s.caret);
+          next = next.slice(0, s.caret) + next.slice(wf);
+        } else if (s.caret < next.length) {
           next = next.slice(0, s.caret) + next.slice(s.caret + 1);
         }
       } else if (k === "ArrowLeft") {
-        s.caret = Math.max(0, s.caret - 1);
+        s.caret = ctrl
+          ? wordBoundaryBack(next, s.caret)
+          : Math.max(0, s.caret - 1);
       } else if (k === "ArrowRight") {
-        s.caret = Math.min(next.length, s.caret + 1);
+        s.caret = ctrl
+          ? wordBoundaryForward(next, s.caret)
+          : Math.min(next.length, s.caret + 1);
       } else if (k === "Home") {
         s.caret = 0;
       } else if (k === "End") {
         s.caret = next.length;
       } else if (k === "Enter" || k === "Escape") {
         focused = null;
-      } else if (k.length === 1) {
+      } else if (k.length === 1 && !ctrl) {
         next = next.slice(0, s.caret) + k + next.slice(s.caret);
         s.caret++;
       }
@@ -716,23 +729,36 @@ export function textArea(
   const font = opts.font ?? top(fontStack) ?? FONT;
 
   if (isFocused) {
-    for (const k of keysJustPressed) {
+    const ctrl = keysDown.has("Control");
+    for (const k of keysTyped) {
+      if (k === "Control" || k === "Shift") continue;
       if (k === "Backspace") {
-        if (s.caret > 0) {
+        if (ctrl) {
+          const wb = wordBoundaryBack(next, s.caret);
+          next = next.slice(0, wb) + next.slice(s.caret);
+          s.caret = wb;
+        } else if (s.caret > 0) {
           next = next.slice(0, s.caret - 1) + next.slice(s.caret);
           s.caret--;
         }
       } else if (k === "Delete") {
-        if (s.caret < next.length) {
+        if (ctrl) {
+          const wf = wordBoundaryForward(next, s.caret);
+          next = next.slice(0, s.caret) + next.slice(wf);
+        } else if (s.caret < next.length) {
           next = next.slice(0, s.caret) + next.slice(s.caret + 1);
         }
       } else if (k === "Enter") {
         next = next.slice(0, s.caret) + "\n" + next.slice(s.caret);
         s.caret++;
       } else if (k === "ArrowLeft") {
-        s.caret = Math.max(0, s.caret - 1);
+        s.caret = ctrl
+          ? wordBoundaryBack(next, s.caret)
+          : Math.max(0, s.caret - 1);
       } else if (k === "ArrowRight") {
-        s.caret = Math.min(next.length, s.caret + 1);
+        s.caret = ctrl
+          ? wordBoundaryForward(next, s.caret)
+          : Math.min(next.length, s.caret + 1);
       } else if (k === "ArrowUp") {
         const lc = caretLineCol(next, s.caret);
         if (lc.line > 0) s.caret = lineColToIndex(next, lc.line - 1, lc.col);
@@ -751,7 +777,7 @@ export function textArea(
         s.caret = lineColToIndex(next, lc.line, len);
       } else if (k === "Escape") {
         focused = null;
-      } else if (k.length === 1) {
+      } else if (k.length === 1 && !ctrl) {
         next = next.slice(0, s.caret) + k + next.slice(s.caret);
         s.caret++;
       }
@@ -802,6 +828,18 @@ export function textArea(
   }
 
   return { ...c, value: next };
+}
+
+// word-boundary helpers — skip non-word chars then word chars, like editors do
+function wordBoundaryBack(text: string, idx: number): number {
+  while (idx > 0 && /\s/.test(text[idx - 1]!)) idx--;
+  while (idx > 0 && !/\s/.test(text[idx - 1]!)) idx--;
+  return idx;
+}
+function wordBoundaryForward(text: string, idx: number): number {
+  while (idx < text.length && !/\s/.test(text[idx]!)) idx++;
+  while (idx < text.length && /\s/.test(text[idx]!)) idx++;
+  return idx;
 }
 
 function caretLineCol(

@@ -4,9 +4,9 @@ Self-critical list of things to revisit. Mark with `- [x]` when done.
 
 ## Round 1: text input + select + windows polish (current pass)
 
-- [ ] Text rendering ignores node padding on `textAlign: "left"` — text and caret are drawn at the rect edge, not inset by padding.l
-- [ ] Key repeat doesn't work (`keysJustPressed` is edge-only). Need a `keysTyped` set that includes browser auto-repeat
-- [ ] Text input missing: Ctrl+Backspace (delete word), Ctrl+Arrow (move by word)
+- [x] Text rendering ignores node padding on `textAlign: "left"` — text and caret are drawn at the rect edge, not inset by padding.l
+- [x] Key repeat doesn't work (`keysJustPressed` is edge-only). Need a `keysTyped` set that includes browser auto-repeat
+- [x] Text input missing: Ctrl+Backspace (delete word), Ctrl+Arrow (move by word)
 - [ ] Select trigger appends "   ▾" to the text — chevron position drifts with value length. Should be right-aligned via a row+spacer
 - [ ] Select dropdown options use textAlign:left but inherit button's centered conventions — needs explicit padding handling
 - [ ] Windows: too much radius everywhere; simplify (squarer title bar / body, sharp inner content)
