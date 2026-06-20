@@ -17,6 +17,7 @@ const state = {
   notifications: true,
   volume: 0.5,
   brightness: 0.7,
+  modalOpen: false,
 };
 
 let _canvasW = 0;
@@ -34,6 +35,12 @@ ui.onCommand((name) => {
       break;
     case "docs.toggle-notif":
       state.notifications = !state.notifications;
+      break;
+    case "docs.open-modal":
+      state.modalOpen = true;
+      break;
+    case "docs.close-modal":
+      state.modalOpen = false;
       break;
   }
 });
@@ -649,6 +656,30 @@ export function tick(ctx: CanvasRenderingContext2D, _dt: number) {
       );
 
       section(
+        "Modals",
+        "ui.modal() draws a backdrop covering the canvas and centers its content. Clicks on the backdrop don't fall through; check the returned Comm.clicked to dismiss on backdrop click.",
+        [
+          "if (state.showModal) {",
+          '  const m = ui.modal({ id: "confirm" }, () => {',
+          '    ui.col({ width: 320, bg: CARD_BG, radius: 12, padding: 20 },',
+          "      () => { /* dialog content */ });",
+          "  });",
+          '  if (m.clicked) state.showModal = false;  // backdrop click',
+          "}",
+        ],
+        () => {
+          if (
+            ui.button("Open modal", {
+              id: "doc-open-modal",
+              radius: 5,
+            }).clicked
+          ) {
+            ui.cmd("docs.open-modal");
+          }
+        },
+      );
+
+      section(
         "Command buffer",
         "Queue mutations during build; the handler runs at the start of the next frame, before any builder code. Hotkeys and clicks can emit the same command.",
         [
@@ -720,4 +751,56 @@ export function tick(ctx: CanvasRenderingContext2D, _dt: number) {
     textColor: "#052e16",
     font: "bold 22px system-ui, sans-serif",
   });
+
+  // modal overlay (referenced in the Modals section)
+  if (state.modalOpen) {
+    const m = ui.modal({ id: "doc-confirm" }, () => {
+      ui.col(
+        {
+          width: 360,
+          padding: 22,
+          gap: 14,
+          bg: CARD_BG,
+          border: CARD_BORDER,
+          radius: 12,
+          align: "stretch",
+        },
+        () => {
+          ui.withFont("bold 18px system-ui, sans-serif", () => {
+            ui.label("Are you sure?");
+          });
+          ui.label(
+            "This is a modal. Click outside it to dismiss, or use the buttons.",
+            { wrap: true, width: "grow" },
+          );
+          ui.row({ width: "grow", gap: 8 }, () => {
+            if (
+              ui.button("Cancel", {
+                id: "doc-modal-cancel",
+                width: "grow",
+                height: 36,
+                radius: 5,
+              }).clicked
+            ) {
+              ui.cmd("docs.close-modal");
+            }
+            ui.withTextColor("#fff", () => {
+              if (
+                ui.button("Confirm", {
+                  id: "doc-modal-confirm",
+                  width: "grow",
+                  height: 36,
+                  radius: 5,
+                  bg: "#16a34a",
+                }).clicked
+              ) {
+                ui.cmd("docs.close-modal");
+              }
+            });
+          });
+        },
+      );
+    });
+    if (m.clicked) ui.cmd("docs.close-modal");
+  }
 }

@@ -447,6 +447,28 @@ export function col(opts: NodeOpts, fn: () => void): Comm {
   return node({ ...opts, dir: "col" }, fn);
 }
 
+// Modal — full-canvas backdrop that centers its content on top of everything.
+// `Comm.clicked` is true when the backdrop (not the content) is clicked,
+// so `if (modal.clicked) close()` gives you dismiss-on-backdrop-click.
+export function modal(opts: NodeOpts, fn: () => void): Comm {
+  return col(
+    {
+      x: 0,
+      y: 0,
+      width: "grow",
+      height: "grow",
+      align: "center",
+      justify: "center",
+      bg: "rgba(0,0,0,0.55)",
+      clickable: true,
+      cursor: "default",
+      ...opts,
+      id: opts.id ?? "modal",
+    },
+    fn,
+  );
+}
+
 // === widgets ===
 
 export function spacer(opts: NodeOpts = {}): void {
