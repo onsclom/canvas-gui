@@ -737,6 +737,23 @@ export function tick(ctx: CanvasRenderingContext2D, _dt: number) {
       );
 
       section(
+        "Keyboard navigation",
+        "Tab / Shift-Tab cycle focus through clickable widgets in depth-first order. Enter activates. Escape blurs. Click also moves focus. Focused widgets get a green ring.",
+        [
+          "// happens automatically — try pressing Tab anywhere",
+          "// and watch the green focus ring move.",
+        ],
+        () => {
+          ui.row({ width: "grow", gap: 6 }, () => {
+            ui.button("Apple", { id: "nav-apple", radius: 5 });
+            ui.button("Banana", { id: "nav-banana", radius: 5 });
+            ui.button("Cherry", { id: "nav-cherry", radius: 5 });
+            ui.button("Date", { id: "nav-date", radius: 5 });
+          });
+        },
+      );
+
+      section(
         "Command buffer",
         "Queue mutations during build; the handler runs at the start of the next frame, before any builder code. Hotkeys and clicks can emit the same command.",
         [

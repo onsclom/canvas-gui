@@ -67,6 +67,18 @@ export function registerInputListeners(canvas: HTMLCanvasElement) {
 
   document.body.addEventListener("keydown", (e) => {
     if (e.metaKey || e.ctrlKey || e.altKey) return;
+    // stop the browser from acting on keys we use internally — Tab would
+    // move focus into the URL bar, arrows + space scroll the page
+    if (
+      e.key === "Tab" ||
+      e.key === "ArrowUp" ||
+      e.key === "ArrowDown" ||
+      e.key === "ArrowLeft" ||
+      e.key === "ArrowRight" ||
+      e.key === " "
+    ) {
+      e.preventDefault();
+    }
     if (!keysDown.has(e.key)) keysJustPressed.add(e.key);
     keysDown.add(e.key);
   });

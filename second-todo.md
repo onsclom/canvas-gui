@@ -1,0 +1,2 @@
+- make demo that shows more custom style customizations. (make a few ui examples on that demo page with very different design styles - though make htem all look great and iterate on them all)
+- think of more cool, useful elements to add: select for example!

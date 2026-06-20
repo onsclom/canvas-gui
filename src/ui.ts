@@ -1,4 +1,4 @@
-import { keysJustPressed, mouse } from "./input";
+import { keysDown, keysJustPressed, mouse } from "./input";
 
 const FONT = "14px system-ui, sans-serif";
 const BG = "#374151";
@@ -146,6 +146,8 @@ let active: string | null = null;
 let nextHot: string | null = null;
 let nextScrollTarget: string | null = null;
 let nextCursor: string | null = null;
+let focused: string | null = null;
+const focusList: string[] = [];
 let frameIdx = 0;
 const cache = new Map<string, WidgetState>();
 const pendingClicks = new Set<string>();
@@ -336,6 +338,7 @@ export function frameEnd() {
   nextHot = null;
   nextScrollTarget = null;
   nextCursor = null;
+  focusList.length = 0;
   deferredAbs.length = 0;
 
   // phase 1: solve + draw all in-flow roots; abs roots get deferred to the
@@ -352,6 +355,35 @@ export function frameEnd() {
   }
 
   hot = nextHot;
+
+  // keyboard navigation
+  if (keysJustPressed.has("Tab") && focusList.length > 0) {
+    const back = keysDown.has("Shift");
+    const idx = focused ? focusList.indexOf(focused) : -1;
+    let next: number;
+    if (idx === -1) {
+      next = back ? focusList.length - 1 : 0;
+    } else {
+      next = back
+        ? (idx - 1 + focusList.length) % focusList.length
+        : (idx + 1) % focusList.length;
+    }
+    focused = focusList[next]!;
+  }
+  if (keysJustPressed.has("Escape")) {
+    focused = null;
+  }
+  // Enter activates the focused widget (text inputs handle Enter themselves
+  // and either insert \n or blur — that's fine, the focus is already gone
+  // by the time we get here, so we'll just inject a click for whatever
+  // remains focused).
+  if (keysJustPressed.has("Enter") && focused && !focused.includes("#")) {
+    pendingClicks.add(focused);
+  }
+  // a real mouse click moves focus too
+  if (mouse.justLeftClicked) {
+    focused = hot;
+  }
 
   // wheel handling — applies to topmost scrollable under cursor
   if (nextScrollTarget && mouse.wheelDelta !== 0) {
@@ -492,15 +524,13 @@ export function col(opts: NodeOpts, fn: () => void): Comm {
 // buffer this frame.
 export type TextInputComm = Comm & { value: string };
 
-let focusedInput: string | null = null;
-
 export function textInput(
   value: string,
   opts: NodeOpts & { placeholder?: string } = {},
 ): TextInputComm {
   const id = opts.id ?? "text-input";
   const s = getState(id);
-  const isFocused = focusedInput === id;
+  const isFocused = focused === id;
   let next = value;
   const font = opts.font ?? top(fontStack) ?? FONT;
 
@@ -525,7 +555,7 @@ export function textInput(
       } else if (k === "End") {
         s.caret = next.length;
       } else if (k === "Enter" || k === "Escape") {
-        focusedInput = null;
+        focused = null;
       } else if (k.length === 1) {
         next = next.slice(0, s.caret) + k + next.slice(s.caret);
         s.caret++;
@@ -560,7 +590,7 @@ export function textInput(
   // focus / blur on click
   if (mouse.justLeftClicked) {
     if (hot === id) {
-      focusedInput = id;
+      focused = id;
       // place caret near click x (rough — assumes monospace-ish spacing is fine
       // for v1; could measure precisely later)
       if (ctx) {
@@ -581,7 +611,7 @@ export function textInput(
         s.caret = Math.max(0, Math.min(next.length, best));
       }
     } else if (isFocused) {
-      focusedInput = null;
+      focused = null;
     }
   }
 
@@ -597,7 +627,7 @@ export function textArea(
 ): TextInputComm {
   const id = opts.id ?? "text-area";
   const s = getState(id);
-  const isFocused = focusedInput === id;
+  const isFocused = focused === id;
   let next = value;
   const font = opts.font ?? top(fontStack) ?? FONT;
 
@@ -636,7 +666,7 @@ export function textArea(
         const len = next.split("\n")[lc.line]?.length ?? 0;
         s.caret = lineColToIndex(next, lc.line, len);
       } else if (k === "Escape") {
-        focusedInput = null;
+        focused = null;
       } else if (k.length === 1) {
         next = next.slice(0, s.caret) + k + next.slice(s.caret);
         s.caret++;
@@ -683,8 +713,8 @@ export function textArea(
   );
 
   if (mouse.justLeftClicked) {
-    if (hot === id) focusedInput = id;
-    else if (isFocused) focusedInput = null;
+    if (hot === id) focused = id;
+    else if (isFocused) focused = null;
   }
 
   return { ...c, value: next };
@@ -1204,6 +1234,11 @@ function drawNode(node: Node, scrollAccum: number) {
       if (node.scrollable) nextScrollTarget = node.id;
       if (node.cursor) nextCursor = node.cursor;
     }
+    // collect Tab-focusable widgets in depth-first draw order (skip
+    // internal sub-ids like "#thumb", "#drag", "#resize")
+    if (node.clickable && !node.id.includes("#")) {
+      focusList.push(node.id);
+    }
   }
   const hotT = s?.hotT ?? 0;
   const activeT = s?.activeT ?? 0;
@@ -1251,6 +1286,15 @@ function drawNode(node: Node, scrollAccum: number) {
     const caretY = ry + rh / 2 - fh / 2;
     ctx.fillStyle = node.textColor ?? FG;
     ctx.fillRect(caretX, caretY, 1, fh);
+  }
+
+  // keyboard focus ring
+  if (focused === node.id && node.id) {
+    ctx.strokeStyle = "#4ade80";
+    ctx.lineWidth = 2;
+    const r = node.radius > 0 ? node.radius + 2 : 0;
+    setRectPath(rx - 2, ry - 2, rw + 4, rh + 4, r);
+    ctx.stroke();
   }
 
   if (node.text !== undefined) {
