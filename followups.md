@@ -9,9 +9,9 @@ Self-critical list of things to revisit. Mark with `- [x]` when done.
 - [x] Text input missing: Ctrl+Backspace (delete word), Ctrl+Arrow (move by word)
 - [x] Select trigger appends "   ▾" to the text — chevron position drifts with value length. Should be right-aligned via a row+spacer
 - [x] Select dropdown options use textAlign:left but inherit button's centered conventions — needs explicit padding handling
-- [ ] Windows: too much radius everywhere; simplify (squarer title bar / body, sharp inner content)
-- [ ] Windows: resize handle z-order is wrong, appears clipped or on the wrong layer
-- [ ] Windows: most recently interacted window should rise to the top of the z-stack
+- [x] Windows: too much radius everywhere; simplify (squarer title bar / body, sharp inner content)
+- [x] Windows: resize handle z-order is wrong, appears clipped or on the wrong layer
+- [x] Windows: most recently interacted window should rise to the top of the z-stack
 
 ## Known limitations not addressed yet
 

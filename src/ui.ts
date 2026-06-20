@@ -72,6 +72,7 @@ export type NodeOpts = {
   fillBar?: number; // 0..1
   cursor?: string;  // CSS cursor when hovered; defaults to "pointer" for clickable
   caretAt?: number; // draw a blinking text caret at this character index
+  zOrder?: number;  // higher = drawn later among deferred-abs entries
 };
 
 export type ContainerOpts = NodeOpts;
@@ -103,6 +104,7 @@ type Node = {
   fillBar?: number;
   cursor?: string;
   caretAt?: number;
+  zOrder: number;
   intrinsicW: number;
   intrinsicH: number;
   children: Node[];
@@ -128,6 +130,8 @@ type WidgetState = {
   winY: number;
   winW: number;
   winH: number;
+  // frame number of the last user interaction (used to raise windows)
+  lastInteraction: number;
   // text-input caret position
   caret: number;
   lastTouched: number;
@@ -269,6 +273,7 @@ function getState(id: string): WidgetState {
       winY: 0,
       winW: 0,
       winH: 0,
+      lastInteraction: 0,
       caret: 0,
       lastTouched: frameIdx,
     };
@@ -348,7 +353,10 @@ export function frameEnd() {
     if (r.isAbs) deferredAbs.push(r);
     else drawNode(r, 0);
   }
-  // phase 2: deferred abs nodes (incl. ones discovered during phase 1)
+  // phase 2: deferred abs nodes (incl. ones discovered during phase 1).
+  // Sort by zOrder so higher-z windows (the most recently interacted) sit
+  // on top of others. Stable sort preserves insertion order for ties.
+  deferredAbs.sort((a, b) => a.zOrder - b.zOrder);
   let i = 0;
   while (i < deferredAbs.length) {
     drawNode(deferredAbs[i++]!, 0);
@@ -486,6 +494,7 @@ function makeNode(opts: NodeOpts): Node {
     fillBar: opts.fillBar,
     cursor: opts.cursor ?? (opts.clickable ? "pointer" : undefined),
     caretAt: opts.caretAt,
+    zOrder: opts.zOrder ?? 0,
     intrinsicW,
     intrinsicH,
     children: [],
@@ -930,7 +939,17 @@ export function window(opts: WindowOpts, fn: () => void): Comm {
   s.winX = clamp(s.winX, 0, Math.max(0, canvasW - s.winW));
   s.winY = clamp(s.winY, 0, Math.max(0, canvasH - s.winH));
 
-  const radius = opts.radius ?? 8;
+  // any click anywhere inside this window's rect raises it
+  const winRect: Rect = {
+    x: s.winX,
+    y: s.winY,
+    w: s.winW,
+    h: s.winH,
+  };
+  if (mouse.justLeftClicked && hit(winRect)) {
+    s.lastInteraction = frameIdx;
+  }
+
   return col(
     {
       x: s.winX,
@@ -941,25 +960,28 @@ export function window(opts: WindowOpts, fn: () => void): Comm {
       ...opts,
       id,
       bg: opts.bg ?? "#1f2937",
-      border: opts.border ?? "rgba(255,255,255,0.12)",
-      radius,
+      border: opts.border ?? "rgba(255,255,255,0.18)",
+      radius: opts.radius ?? 0,
+      zOrder: s.lastInteraction,
     },
     () => {
-      // title bar (drag handle)
+      // title bar (drag handle) — no radius, full-width
       row(
         {
           id: dragId,
           width: "grow",
-          height: 30,
-          padding: { l: 12, r: 12 },
+          height: 26,
+          padding: { l: 10, r: 10 },
           gap: 8,
-          bg: "#374151",
+          bg: "#2a3441",
           align: "center",
           clickable: true,
           cursor: active === dragId ? "grabbing" : "grab",
         },
         () => {
-          label(opts.title ?? "Window");
+          withFont("bold 12px system-ui, sans-serif", () => {
+            label(opts.title ?? "Window");
+          });
         },
       );
       // body
@@ -973,19 +995,29 @@ export function window(opts: WindowOpts, fn: () => void): Comm {
         },
         fn,
       );
-      // resize handle — absolutely positioned in the bottom-right corner
-      button("⇲", {
-        id: resizeId,
-        x: s.winX + s.winW - 18,
-        y: s.winY + s.winH - 18,
-        width: 14,
-        height: 14,
-        bg: "rgba(255,255,255,0.12)",
-        textColor: "rgba(255,255,255,0.55)",
-        font: "12px ui-monospace, monospace",
-        cursor: "nwse-resize",
-        radius: 3,
-      });
+      // resize footer — in-flow at the bottom so z-order matches the window
+      row(
+        {
+          width: "grow",
+          height: 14,
+          padding: { r: 3, b: 1 },
+          align: "end",
+          justify: "end",
+        },
+        () => {
+          button("⇲", {
+            id: resizeId,
+            width: 12,
+            height: 12,
+            bg: "transparent",
+            textColor: "rgba(255,255,255,0.4)",
+            font: "11px ui-monospace, monospace",
+            cursor: "nwse-resize",
+            radius: 0,
+            padding: 0,
+          });
+        },
+      );
     },
   );
 }
