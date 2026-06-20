@@ -4,7 +4,7 @@
   "type": "module",
   "private": true,
   "scripts": {
-    "dev": "bun index.html --console",
+    "dev": "bun index.html --console --port 3000",
     "build": "bun build index.html --outdir=dist --minify",
     "preview": "bunx serve dist",
     "typecheck": "bunx tsc --noEmit"
