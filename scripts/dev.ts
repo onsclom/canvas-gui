@@ -12,7 +12,10 @@ const pkg = args.find((a) => !a.startsWith("--")) ?? "demos";
 const portFlag = args.indexOf("--port");
 const port = portFlag >= 0 ? Number(args[portFlag + 1]) : 3000;
 
-const root = new URL("..", import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, "$1");
+const root = new URL("..", import.meta.url).pathname.replace(
+  /^\/([A-Za-z]:)/,
+  "$1",
+);
 const entry = `${root}/packages/${pkg}/index.html`;
 const outdir = `${root}/.dev/${pkg}`;
 
@@ -38,7 +41,9 @@ async function build() {
   const code = await proc.exited;
   building = false;
   if (code !== 0) {
-    console.error("✗ build failed:\n" + (await new Response(proc.stderr).text()));
+    console.error(
+      "✗ build failed:\n" + (await new Response(proc.stderr).text()),
+    );
   } else {
     buildVersion++;
     console.log(`✓ rebuilt ${pkg} in ${(performance.now() - t0).toFixed(0)}ms`);
@@ -66,7 +71,8 @@ function serveOn(startPort: number) {
     try {
       return makeServer(p);
     } catch (e) {
-      if (String((e as Error).message).includes("EADDRINUSE")) {
+      const code = (e as { code?: string }).code;
+      if (code === "EADDRINUSE" || String((e as Error).message).includes("EADDRINUSE")) {
         console.warn(`port ${p} in use (stale dev server?), trying ${p + 1}…`);
         continue;
       }
@@ -78,33 +84,36 @@ function serveOn(startPort: number) {
 
 function makeServer(p: number) {
   return Bun.serve({
-  port: p,
-  async fetch(req) {
-    const url = new URL(req.url);
-    if (url.pathname === "/__reload") {
-      const stream = new ReadableStream({
-        start(c) {
-          clients.add(c);
-        },
-        cancel() {},
-      });
-      return new Response(stream, {
-        headers: {
-          "content-type": "text/event-stream",
-          "cache-control": "no-cache",
-          connection: "keep-alive",
-        },
-      });
-    }
-    const path = url.pathname === "/" ? "/index.html" : url.pathname;
-    const file = Bun.file(outdir + path);
-    if (!(await file.exists())) return new Response("404", { status: 404 });
-    if (path === "/index.html") {
-      const html = (await file.text()).replace("</body>", RELOAD_SNIPPET + "</body>");
-      return new Response(html, { headers: { "content-type": "text/html" } });
-    }
-    return new Response(file, { headers: { "cache-control": "no-store" } });
-  },
+    port: p,
+    async fetch(req) {
+      const url = new URL(req.url);
+      if (url.pathname === "/__reload") {
+        const stream = new ReadableStream({
+          start(c) {
+            clients.add(c);
+          },
+          cancel() {},
+        });
+        return new Response(stream, {
+          headers: {
+            "content-type": "text/event-stream",
+            "cache-control": "no-cache",
+            connection: "keep-alive",
+          },
+        });
+      }
+      const path = url.pathname === "/" ? "/index.html" : url.pathname;
+      const file = Bun.file(outdir + path);
+      if (!(await file.exists())) return new Response("404", { status: 404 });
+      if (path === "/index.html") {
+        const html = (await file.text()).replace(
+          "</body>",
+          RELOAD_SNIPPET + "</body>",
+        );
+        return new Response(html, { headers: { "content-type": "text/html" } });
+      }
+      return new Response(file, { headers: { "cache-control": "no-store" } });
+    },
   });
 }
 
@@ -120,6 +129,9 @@ const schedule = () => {
   if (debounce) clearTimeout(debounce);
   debounce = setTimeout(() => void build(), 80);
 };
-for (const dir of [`${root}/packages/${pkg}/src`, `${root}/packages/canvas-gui/src`]) {
+for (const dir of [
+  `${root}/packages/${pkg}/src`,
+  `${root}/packages/canvas-gui/src`,
+]) {
   watch(dir, { recursive: true }, schedule);
 }
