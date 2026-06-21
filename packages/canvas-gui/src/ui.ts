@@ -1307,9 +1307,12 @@ export type WindowOpts = NodeOpts & {
   defaultH?: number;
   minW?: number;
   minH?: number;
+  closable?: boolean; // show a ✕ in the title bar; check Comm.closeClicked
 };
 
-export function window(opts: WindowOpts, fn: () => void): Comm {
+export type WindowComm = Comm & { closeClicked: boolean };
+
+export function window(opts: WindowOpts, fn: () => void): WindowComm {
   const id = opts.id ?? "window";
   const s = getState(id);
   if (s.winW === 0 && s.winH === 0) {
@@ -1352,7 +1355,8 @@ export function window(opts: WindowOpts, fn: () => void): Comm {
     }
   }
 
-  return col(
+  let closeClicked = false;
+  const c = col(
     {
       x: s.winX,
       y: s.winY,
@@ -1374,7 +1378,7 @@ export function window(opts: WindowOpts, fn: () => void): Comm {
           id: dragId,
           width: "grow",
           height: 26,
-          padding: { l: 10, r: 10 },
+          padding: { l: 10, r: 6 },
           gap: 8,
           bg: "#2a3441",
           align: "center",
@@ -1385,6 +1389,24 @@ export function window(opts: WindowOpts, fn: () => void): Comm {
           withFont("bold 12px system-ui, sans-serif", () => {
             label(opts.title ?? "Window");
           });
+          if (opts.closable) {
+            spacer({ width: "grow" });
+            if (
+              button("✕", {
+                id: `${id}#close`,
+                width: 20,
+                height: 18,
+                bg: "transparent",
+                textColor: "rgba(255,255,255,0.55)",
+                font: "12px system-ui, sans-serif",
+                radius: 4,
+                padding: 0,
+                press: false,
+              }).clicked
+            ) {
+              closeClicked = true;
+            }
+          }
         },
       );
       // body
@@ -1423,6 +1445,7 @@ export function window(opts: WindowOpts, fn: () => void): Comm {
       );
     },
   );
+  return { ...c, closeClicked };
 }
 
 // Modal — full-canvas backdrop that centers its content on top of everything.
