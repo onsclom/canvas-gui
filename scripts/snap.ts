@@ -121,6 +121,20 @@ async function type(text: string) {
     await pause(20);
   }
 }
+async function drag(x1: number, y1: number, x2: number, y2: number) {
+  await send("Input.dispatchMouseEvent", { type: "mouseMoved", x: x1, y: y1 }, sessionId);
+  await send("Input.dispatchMouseEvent", { type: "mousePressed", x: x1, y: y1, button: "left", clickCount: 1 }, sessionId);
+  await pause(60);
+  const steps = 10;
+  for (let i = 1; i <= steps; i++) {
+    const x = x1 + ((x2 - x1) * i) / steps;
+    const y = y1 + ((y2 - y1) * i) / steps;
+    await send("Input.dispatchMouseEvent", { type: "mouseMoved", x, y, button: "left" }, sessionId);
+    await pause(30);
+  }
+  await pause(60);
+  await send("Input.dispatchMouseEvent", { type: "mouseReleased", x: x2, y: y2, button: "left", clickCount: 1 }, sessionId);
+}
 async function key(k: string) {
   await send("Input.dispatchKeyEvent", { type: "keyDown", key: k, windowsVirtualKeyCode: k === "Enter" ? 13 : k === "Tab" ? 9 : 0 }, sessionId);
   await send("Input.dispatchKeyEvent", { type: "keyUp", key: k }, sessionId);
@@ -130,6 +144,10 @@ for (let a = 0; a < args.length; a++) {
     const [x, y] = args[++a]!.split(",").map(Number);
     await click(x!, y!);
     await pause(220);
+  } else if (args[a] === "--drag") {
+    const [x1, y1, x2, y2] = args[++a]!.split(",").map(Number);
+    await drag(x1!, y1!, x2!, y2!);
+    await pause(200);
   } else if (args[a] === "--type") {
     await type(args[++a]!);
     await pause(150);
@@ -138,7 +156,7 @@ for (let a = 0; a < args.length; a++) {
     await pause(150);
   }
 }
-if (args.includes("--click") || args.includes("--type") || args.includes("--key")) {
+if (["--click", "--type", "--key", "--drag"].some((f) => args.includes(f))) {
   await pause(400);
 }
 

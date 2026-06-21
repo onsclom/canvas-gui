@@ -14,4 +14,4 @@ export {
   resetInput,
   registerInputListeners,
 } from "./input";
-export { startLoop } from "./canvas-loop";
+export { startLoop, perf } from "./canvas-loop";

@@ -5,6 +5,12 @@ const FIXED_FPS = 0;
 
 let lastTime = performance.now();
 
+// Per-frame timing, updated each tick. `frameMs` is the wall-clock cost of the
+// whole UI step (build + layout + draw); `deltaMs` is the time since the last
+// frame (≈ frame budget); `fps` is derived from it. Read it from your tick to
+// build performance HUDs. Values reflect the most recently completed frame.
+export const perf = { frameMs: 0, deltaMs: 0, fps: 0 };
+
 export function startLoop(
   canvas: HTMLCanvasElement,
   tick: (ctx: CanvasRenderingContext2D, dt: number) => void,
@@ -40,10 +46,14 @@ function runTickStep(
   assert(ctx);
   ctx.scale(devicePixelRatio, devicePixelRatio);
 
+  const t0 = performance.now();
   uiFrameStart(ctx, dt);
   tick(ctx, dt);
   uiFrameEnd();
   resetInput();
+  perf.frameMs = performance.now() - t0;
+  perf.deltaMs = dt;
+  perf.fps = dt > 0 ? 1000 / dt : 0;
 }
 
 function assert(condition: unknown): asserts condition {
