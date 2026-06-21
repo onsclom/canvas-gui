@@ -81,6 +81,9 @@ export type NodeOpts = {
   press?: boolean;  // animate a slight depress while held; defaults on for button/toggle
   clip?: boolean;   // clip children to this node's (rounded) rect even when not scrollable
   disabled?: boolean; // render dimmed + ignore all interaction (not clickable/focusable)
+  // custom canvas drawing in z-order, clipped to this node's rect — the escape
+  // hatch for charts, viewports, freehand drawing, etc. (see ui.canvas)
+  draw?: (ctx: CanvasRenderingContext2D, rect: Rect) => void;
   // text rendering extras — mostly set internally by textInput/textArea
   selStart?: number; // selection highlight start (char index)
   selEnd?: number;   // selection highlight end (char index)
@@ -123,6 +126,7 @@ type Node = {
   press: boolean;
   clip: boolean;
   disabled: boolean;
+  draw?: (ctx: CanvasRenderingContext2D, rect: Rect) => void;
   // text-input rendering extras (set by textInput/textArea)
   selStart?: number; // selection range start (char index) for highlight
   selEnd?: number;   // selection range end (char index) for highlight
@@ -274,11 +278,21 @@ function fontHeight(font: string): number {
   return fh ? parseFloat(fh[1]!) : LABEL_H;
 }
 
-function measureText(text: string, font: string): { w: number; h: number } {
+function textWH(text: string, font: string): { w: number; h: number } {
   if (!ctx) return { w: 0, h: LABEL_H };
   ctx.font = font;
   const m = ctx.measureText(text);
   return { w: m.width, h: fontHeight(font) };
+}
+
+// Measure a string in the current (or given) font. Only valid during a frame.
+// Useful for laying out custom-drawn content (ui.canvas) or truncating text.
+export function measureText(
+  text: string,
+  font?: string,
+): { width: number; height: number } {
+  const m = textWH(text, font ?? top(fontStack) ?? FONT);
+  return { width: m.w, height: m.h };
 }
 
 function wrapText(text: string, maxWidth: number, font: string): string[] {
@@ -651,11 +665,11 @@ function makeNode(opts: NodeOpts): Node {
     intrinsicW = SLIDER_FIT_W;
     intrinsicH = SLIDER_FIT_H;
     if (opts.text !== undefined) {
-      const m = measureText(opts.text, font);
+      const m = textWH(opts.text, font);
       intrinsicW = Math.max(intrinsicW, m.w + BUTTON_PAD_X * 2);
     }
   } else if (opts.text !== undefined) {
-    const m = measureText(opts.text, font);
+    const m = textWH(opts.text, font);
     const padded = opts.clickable === true || opts.bg !== undefined;
     intrinsicW = padded ? m.w + BUTTON_PAD_X * 2 : m.w;
     intrinsicH = padded ? m.h + BUTTON_PAD_Y * 2 : m.h;
@@ -693,6 +707,7 @@ function makeNode(opts: NodeOpts): Node {
     press: opts.press ?? false,
     clip: !!opts.clip,
     disabled: !!opts.disabled,
+    draw: opts.draw,
     selStart: opts.selStart,
     selEnd: opts.selEnd,
     textScrollX: opts.textScrollX,
@@ -736,6 +751,17 @@ export function row(opts: NodeOpts, fn: () => void): Comm {
 }
 export function col(opts: NodeOpts, fn: () => void): Comm {
   return node({ ...opts, dir: "col" }, fn);
+}
+
+// A laid-out box you draw into yourself. `draw(ctx, rect)` runs during the draw
+// pass, in z-order, clipped to the box — the escape hatch for charts, game
+// viewports, freehand drawing, anything that isn't a widget. Returns a Comm so
+// you can read clicks / hover / drag and hit-test against rect.
+export function canvas(
+  opts: NodeOpts,
+  draw: (ctx: CanvasRenderingContext2D, rect: Rect) => void,
+): Comm {
+  return node({ ...opts, draw });
 }
 
 // Single-line text input. Click to focus, type. Full caret + selection model:
@@ -2075,6 +2101,16 @@ function drawNode(node: Node, scrollAccumY: number, scrollAccumX = 0) {
     ctx.lineWidth = 1;
     setRectPath(rx + 0.5, ry + 0.5, rw - 1, rh - 1, node.radius);
     ctx.stroke();
+  }
+
+  // custom drawing escape hatch — runs in z-order, clipped to the rect, with a
+  // fresh save/restore so the callback can't leak ctx state into the rest of UI
+  if (node.draw) {
+    ctx.save();
+    setRectPath(rx, ry, rw, rh, node.radius);
+    ctx.clip();
+    node.draw(ctx, { x: rx, y: ry, w: rw, h: rh });
+    ctx.restore();
   }
 
   // keyboard focus ring — soft animated halo + crisp inner stroke. Color is
