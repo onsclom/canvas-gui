@@ -66,7 +66,24 @@ See `packages/canvas-gui/README.md` for the per-package overview.
 
 - A working Bun workspace
 - The library (`packages/canvas-gui`)
-- 9 demos including a literal docs page that documents every widget
-  (`packages/demos`)
+- 13 demos (`packages/demos`), including a literal docs page that documents
+  every widget, the [7GUIs](https://eugenkiss.github.io/7guis/) benchmark, a
+  performance bench, a physics playground, and a generative fractal tree
 - A landing page (`packages/landing`)
 - This README + a `vendor` script
+
+## Screenshots / visual testing
+
+Demos are deep-linked by URL hash (`#docs`, `#sevenguis`, …). To screenshot or
+drive a demo headlessly (used to verify changes):
+
+```bash
+bash scripts/chrome.sh          # launch headless Chrome with a CDP port
+bun run demos                   # serve the demos
+bun scripts/snap.ts sevenguis out.png            # build + screenshot a demo
+bun scripts/snap.ts sevenguis out.png --click 161,167   # ...with interaction
+bun scripts/snap.ts docs out.png --mobile --touch       # ...as a touch device
+```
+
+`snap.ts` builds a fresh bundle, serves it, drives Chrome over CDP, and fails
+on page errors. Supports `--click/--drag/--type/--key` and `--touch`.

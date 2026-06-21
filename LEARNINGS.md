@@ -42,6 +42,39 @@ Friction worth noting (not yet addressed):
   scroll; works, but there's no "freeze header row" concept (the header
   scrolls with the body here because it's inside the same scroll area).
 
+## Performance bench (perf.ts)
+
+- Needed real per-frame cost (build + layout + draw), which the tick can't
+  measure itself (draw happens after tick returns). Added `perf` to the loop:
+  it times the whole UI step and exposes `frameMs / deltaMs / fps`.
+- Result: the immediate-mode rebuild is cheap — ~5800 animated tiles hold
+  ~59fps. Wrapped flow layout and per-frame `hsl()` strings are the main costs;
+  nothing in the library needed changing for scale.
+
+## Physics playground (physics.ts)
+
+- "UI elements with physics" is trivial here: a body is app state, rendered as
+  an absolutely-positioned `button`. The widget stays fully interactive while
+  it bounces. No library support needed — `comm.rect` + `mouseX/Y` cover
+  hit-testing and cursor forces.
+
+## Generative tree (trees.ts)
+
+- Custom canvas drawing (raw `ctx` fractal) and the UI panel coexist with zero
+  friction: draw your pixels in tick, then build the panel. The library only
+  owns what you ask it to.
+
+## Mobile / touch
+
+- Pointer events already give taps, but three things were missing and were
+  added to the library: (1) a touch tap has no prior hover frame and
+  `pointerleave` would clear `onCanvas` before the click registered — fixed by
+  recognizing touch taps and holding `onCanvas` through the release frame;
+  (2) `touch-action: none` so the page doesn't pan/zoom; (3) one-finger
+  drag-to-scroll over any scrollable area (cancels the press past a threshold).
+- The demo picker tab bar was made horizontally scrollable so every demo is
+  reachable on a phone — a nice real use of the new horizontal scroll.
+
 ## Workflow
 
 - `scripts/chrome.sh` launches headless Chrome with a CDP port; `scripts/snap.ts`
