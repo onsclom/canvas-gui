@@ -255,6 +255,10 @@ const heightStack: SizeSpec[] = [];
 const fontStack: string[] = [];
 const focusRingStack: string[] = [];
 
+// programmatic scroll intents for scrollable containers, applied during the
+// next layout (when content size is known). y can be a number or "bottom".
+const pendingScroll = new Map<string, { x?: number; y?: number | "bottom" }>();
+
 // id scope: prefixes widget ids so repeated components (rows of a list, cards
 // in a loop) don't collide without hand-threading unique ids everywhere.
 const idScopeStack: string[] = [];
@@ -1729,6 +1733,33 @@ export function isFocused(id: string): boolean {
   return focused === id;
 }
 
+// === scroll control ===
+// Move a scrollable container's scroll offset; applied at the next layout so it
+// clamps against real content size. Pass the same id you gave the container.
+export function scrollTo(id: string, pos: { x?: number; y?: number }): void {
+  const key = scopeId(id);
+  pendingScroll.set(key, { ...pendingScroll.get(key), ...pos });
+}
+// Pin to the bottom (newest content) — call when appending to a chat/console.
+export function scrollToBottom(id: string): void {
+  const key = scopeId(id);
+  pendingScroll.set(key, { ...pendingScroll.get(key), y: "bottom" });
+}
+// Current scroll position + bounds for a scrollable container (after last layout).
+export function scrollState(id: string): {
+  x: number;
+  y: number;
+  maxX: number;
+  maxY: number;
+  atBottom: boolean;
+} {
+  const s = cache.get(scopeId(id));
+  if (!s) return { x: 0, y: 0, maxX: 0, maxY: 0, atBottom: true };
+  const maxY = Math.max(0, s.contentH - s.rect.h);
+  const maxX = Math.max(0, s.contentW - s.rect.w);
+  return { x: s.scrollX, y: s.scrollY, maxX, maxY, atBottom: s.scrollY >= maxY - 1 };
+}
+
 // === layout ===
 
 // fit-size lookup. When asking for height with a knownWidth, fitSize
@@ -1962,8 +1993,18 @@ function solveContainer(node: Node) {
       (isRow ? maxCross : totalMain) + node.padding.t + node.padding.b;
     s.contentW =
       (isRow ? totalMain : maxCross) + node.padding.l + node.padding.r;
-    s.scrollY = clamp(s.scrollY, 0, Math.max(0, s.contentH - node.ch));
-    s.scrollX = clamp(s.scrollX, 0, Math.max(0, s.contentW - node.cw));
+    const maxY = Math.max(0, s.contentH - node.ch);
+    const maxX = Math.max(0, s.contentW - node.cw);
+    // apply any programmatic scroll intent now that bounds are known
+    const pend = pendingScroll.get(node.id);
+    if (pend) {
+      pendingScroll.delete(node.id);
+      if (pend.y === "bottom") s.scrollY = maxY;
+      else if (typeof pend.y === "number") s.scrollY = pend.y;
+      if (typeof pend.x === "number") s.scrollX = pend.x;
+    }
+    s.scrollY = clamp(s.scrollY, 0, maxY);
+    s.scrollX = clamp(s.scrollX, 0, maxX);
   }
 
   for (const c of node.children) {
