@@ -16,7 +16,14 @@ export const mouse = {
   rightClickDown: false,
   wheelDelta: 0,
   wheelDeltaX: 0,
+  // "mouse" | "touch" | "pen" — lets the UI enable touch drag-to-scroll
+  pointerType: "mouse" as string,
 };
+
+// a touch release keeps onCanvas true for the frame that records the click,
+// then this defers clearing it (and parking the pointer off-canvas) until the
+// next resetInput — otherwise the tap's click is dropped by the hit test.
+let clearTouchNext = false;
 
 export function resetInput() {
   mouse.justLeftClicked = false;
@@ -25,13 +32,29 @@ export function resetInput() {
   mouse.justRightReleased = false;
   mouse.wheelDelta = 0;
   mouse.wheelDeltaX = 0;
+  if (clearTouchNext) {
+    mouse.onCanvas = false;
+    mouse.x = -9999;
+    mouse.y = -9999;
+    clearTouchNext = false;
+  }
   keysJustPressed.clear();
   keysTyped.clear();
   keysJustReleased.clear();
 }
 
 export function registerInputListeners(canvas: HTMLCanvasElement) {
+  // stop the browser from panning/zooming the page on touch — we handle
+  // scrolling ourselves so the canvas owns all touch gestures
+  canvas.style.touchAction = "none";
+
   canvas.addEventListener("pointerdown", (e) => {
+    mouse.pointerType = e.pointerType || "mouse";
+    // a touch starts "on canvas" the moment it lands (no hover/enter first)
+    if (e.pointerType !== "mouse") mouse.onCanvas = true;
+    const rect = canvas.getBoundingClientRect();
+    mouse.x = e.clientX - rect.left;
+    mouse.y = e.clientY - rect.top;
     if (e.button === 0) {
       mouse.leftClickDown = true;
       mouse.justLeftClicked = true;
@@ -41,7 +64,7 @@ export function registerInputListeners(canvas: HTMLCanvasElement) {
     }
   });
 
-  canvas.addEventListener("pointerup", (e) => {
+  const onUp = (e: PointerEvent) => {
     if (e.button === 0) {
       mouse.leftClickDown = false;
       mouse.justLeftReleased = true;
@@ -49,7 +72,11 @@ export function registerInputListeners(canvas: HTMLCanvasElement) {
       mouse.rightClickDown = false;
       mouse.justRightReleased = true;
     }
-  });
+    // touch has no lingering hover: clear onCanvas after this frame's click
+    if (e.pointerType !== "mouse") clearTouchNext = true;
+  };
+  canvas.addEventListener("pointerup", onUp);
+  canvas.addEventListener("pointercancel", onUp);
 
   canvas.addEventListener("pointermove", (e) => {
     const rect = canvas.getBoundingClientRect();
@@ -57,12 +84,13 @@ export function registerInputListeners(canvas: HTMLCanvasElement) {
     mouse.y = e.clientY - rect.top;
   });
 
-  canvas.addEventListener("pointerenter", () => {
-    mouse.onCanvas = true;
+  canvas.addEventListener("pointerenter", (e) => {
+    if (e.pointerType === "mouse") mouse.onCanvas = true;
   });
 
-  canvas.addEventListener("pointerleave", () => {
-    mouse.onCanvas = false;
+  canvas.addEventListener("pointerleave", (e) => {
+    // touch leave is handled via clearTouchNext after the click is recorded
+    if (e.pointerType === "mouse") mouse.onCanvas = false;
   });
 
   canvas.addEventListener("wheel", (e) => {

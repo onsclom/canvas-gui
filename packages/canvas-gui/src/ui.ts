@@ -200,6 +200,16 @@ const focusList: string[] = [];
 let currentDrawWindow: string | null = null;
 // >0 while drawing inside a clickable subtree; text there is not page-selectable
 let inClickable = 0;
+// touch drag-to-scroll: a one-finger drag over a scrollable area scrolls it
+// (and cancels the press so widgets underneath don't fire)
+const touchScroll = {
+  target: null as string | null,
+  startX: 0,
+  startY: 0,
+  baseX: 0,
+  baseY: 0,
+  active: false,
+};
 let frameIdx = 0;
 const cache = new Map<string, WidgetState>();
 const pendingClicks = new Set<string>();
@@ -537,6 +547,42 @@ export function frameEnd() {
     ) {
       const txt = pageSelectionText();
       if (txt) void navigator.clipboard?.writeText(txt);
+    }
+  }
+
+  // touch drag-to-scroll — a finger drag over a scrollable area pans it. Once
+  // the drag passes a small threshold it cancels the press so the widget under
+  // the finger doesn't also fire. (Mouse uses the wheel below; this is touch.)
+  if (mouse.pointerType !== "mouse") {
+    if (mouse.justLeftClicked) {
+      touchScroll.target = nextScrollTarget;
+      touchScroll.startX = mouse.x;
+      touchScroll.startY = mouse.y;
+      touchScroll.active = false;
+      if (touchScroll.target) {
+        const s = getState(touchScroll.target);
+        touchScroll.baseX = s.scrollX;
+        touchScroll.baseY = s.scrollY;
+      }
+    }
+    if (mouse.leftClickDown && touchScroll.target) {
+      const dx = mouse.x - touchScroll.startX;
+      const dy = mouse.y - touchScroll.startY;
+      if (!touchScroll.active && Math.hypot(dx, dy) > 8) {
+        touchScroll.active = true;
+        active = null; // cancel the widget press — this gesture is a scroll
+      }
+      if (touchScroll.active) {
+        const s = getState(touchScroll.target);
+        const maxY = Math.max(0, s.contentH - s.rect.h);
+        const maxX = Math.max(0, s.contentW - s.rect.w);
+        if (maxY > 0) s.scrollY = clamp(touchScroll.baseY - dy, 0, maxY);
+        if (maxX > 0) s.scrollX = clamp(touchScroll.baseX - dx, 0, maxX);
+      }
+    }
+    if (!mouse.leftClickDown) {
+      touchScroll.target = null;
+      touchScroll.active = false;
     }
   }
 

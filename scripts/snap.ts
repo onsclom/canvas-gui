@@ -88,6 +88,9 @@ const { sessionId } = await send("Target.attachToTarget", { targetId, flatten: t
 await send("Page.enable", {}, sessionId);
 await send("Runtime.enable", {}, sessionId);
 await send("Emulation.setDeviceMetricsOverride", { width, height, deviceScaleFactor: scale, mobile }, sessionId);
+if (has("touch")) {
+  await send("Emulation.setTouchEmulationEnabled", { enabled: true, maxTouchPoints: 1 }, sessionId);
+}
 
 const loaded = new Promise<void>((res) => {
   const prev = ws.onmessage!;
@@ -107,7 +110,14 @@ await new Promise((r) => setTimeout(r, waitMs));
 //   --key KEY     (repeatable) press a key (e.g. Enter, Tab)
 // actions run in argv order, with a short settle between each.
 const pause = (ms: number) => new Promise((r) => setTimeout(r, ms));
+const touch = has("touch");
 async function click(x: number, y: number) {
+  if (touch) {
+    await send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [{ x, y }] }, sessionId);
+    await pause(40);
+    await send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] }, sessionId);
+    return;
+  }
   const base = { x, y, button: "left", clickCount: 1 };
   await send("Input.dispatchMouseEvent", { type: "mouseMoved", x, y }, sessionId);
   await send("Input.dispatchMouseEvent", { type: "mousePressed", ...base }, sessionId);
@@ -122,10 +132,23 @@ async function type(text: string) {
   }
 }
 async function drag(x1: number, y1: number, x2: number, y2: number) {
+  const steps = 10;
+  if (touch) {
+    await send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [{ x: x1, y: y1 }] }, sessionId);
+    await pause(50);
+    for (let i = 1; i <= steps; i++) {
+      const x = x1 + ((x2 - x1) * i) / steps;
+      const y = y1 + ((y2 - y1) * i) / steps;
+      await send("Input.dispatchTouchEvent", { type: "touchMove", touchPoints: [{ x, y }] }, sessionId);
+      await pause(30);
+    }
+    await pause(40);
+    await send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] }, sessionId);
+    return;
+  }
   await send("Input.dispatchMouseEvent", { type: "mouseMoved", x: x1, y: y1 }, sessionId);
   await send("Input.dispatchMouseEvent", { type: "mousePressed", x: x1, y: y1, button: "left", clickCount: 1 }, sessionId);
   await pause(60);
-  const steps = 10;
   for (let i = 1; i <= steps; i++) {
     const x = x1 + ((x2 - x1) * i) / steps;
     const y = y1 + ((y2 - y1) * i) / steps;

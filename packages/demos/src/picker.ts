@@ -85,6 +85,7 @@ export function tick(ctx: CanvasRenderingContext2D, dt: number) {
 
   ui.row(
     {
+      id: "picker-bar",
       x: 0,
       y: 0,
       width: "grow",
@@ -92,6 +93,9 @@ export function tick(ctx: CanvasRenderingContext2D, dt: number) {
       gap: 6,
       bg: "rgba(15,23,42,0.85)",
       align: "center",
+      // scroll the tabs sideways when they overflow (narrow / mobile screens);
+      // the grow spacer collapses to 0 when overflowing so scrolling kicks in
+      scrollable: true,
     },
     () => {
       ui.label("demo:");
