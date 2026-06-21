@@ -79,6 +79,7 @@ export type NodeOpts = {
   focusRing?: string; // keyboard-focus ring color; "none" hides it. defaults to the accent
   press?: boolean;  // animate a slight depress while held; defaults on for button/toggle
   clip?: boolean;   // clip children to this node's (rounded) rect even when not scrollable
+  disabled?: boolean; // render dimmed + ignore all interaction (not clickable/focusable)
   // text rendering extras — mostly set internally by textInput/textArea
   selStart?: number; // selection highlight start (char index)
   selEnd?: number;   // selection highlight end (char index)
@@ -119,6 +120,7 @@ type Node = {
   focusRing?: string;
   press: boolean;
   clip: boolean;
+  disabled: boolean;
   // text-input rendering extras (set by textInput/textArea)
   selStart?: number; // selection range start (char index) for highlight
   selEnd?: number;   // selection range end (char index) for highlight
@@ -186,6 +188,9 @@ let nextHot: string | null = null;
 let nextScrollTarget: string | null = null;
 let nextCursor: string | null = null;
 let focused: string | null = null;
+// explicit focus request from focus()/blur(); applied at frameEnd after the
+// click-to-focus pass so programmatic focus wins over the mouse
+let pendingFocus: string | null | undefined = undefined;
 // set while building when the focused widget is a text field, so frameEnd
 // doesn't treat Space/Enter as an "activate" (the field consumes them)
 let focusedIsEditable = false;
@@ -503,6 +508,11 @@ export function frameEnd() {
   if (mouse.justLeftClicked) {
     focused = hot;
   }
+  // explicit focus()/blur() requests win over the mouse this frame
+  if (pendingFocus !== undefined) {
+    focused = pendingFocus;
+    pendingFocus = undefined;
+  }
 
   // page-wide text selection (HTML-like). Pressing on a plain text run while
   // no widget is hovered starts a selection; dragging extends it across runs;
@@ -626,7 +636,7 @@ function makeNode(opts: NodeOpts): Node {
     justify: opts.justify ?? "start",
     align: opts.align ?? "start",
     scrollable: !!opts.scrollable,
-    clickable: !!opts.clickable,
+    clickable: !!opts.clickable && !opts.disabled,
     bg: opts.bg,
     border: opts.border,
     radius: opts.radius ?? 0,
@@ -643,6 +653,7 @@ function makeNode(opts: NodeOpts): Node {
     focusRing: opts.focusRing ?? top(focusRingStack),
     press: opts.press ?? false,
     clip: !!opts.clip,
+    disabled: !!opts.disabled,
     selStart: opts.selStart,
     selEnd: opts.selEnd,
     textScrollX: opts.textScrollX,
@@ -1516,6 +1527,19 @@ export function withFocusRing<T>(c: string, fn: () => T): T {
   return withStack(focusRingStack, c, fn);
 }
 
+// === programmatic focus ===
+// Move keyboard focus to a widget id (or null to clear). The change is applied
+// at the end of the frame, so it wins over the mouse's click-to-focus.
+export function focus(id: string | null): void {
+  pendingFocus = id;
+}
+export function blur(): void {
+  pendingFocus = null;
+}
+export function isFocused(id: string): boolean {
+  return focused === id;
+}
+
 // === command buffer ===
 
 export function cmd(name: string, args?: Record<string, unknown>): void {
@@ -1932,12 +1956,15 @@ function drawNode(node: Node, scrollAccumY: number, scrollAccumX = 0) {
   // tactile depress — scale the whole node slightly toward its center while
   // held. Opt in via press: true (button/toggle default it on). The hit rect
   // (s.rect, set above) stays full-size so the hitbox doesn't shrink.
+  // A disabled node (and its subtree) is drawn dimmed.
   const pressing = node.press && activeT > 0.001;
+  const scoped = pressing || node.disabled;
+  if (scoped) ctx.save();
+  if (node.disabled) ctx.globalAlpha *= 0.45;
   if (pressing) {
     const sc = 1 - 0.045 * activeT;
     const ccx = rx + rw / 2;
     const ccy = ry + rh / 2;
-    ctx.save();
     ctx.translate(ccx, ccy);
     ctx.scale(sc, sc);
     ctx.translate(-ccx, -ccy);
@@ -2115,7 +2142,7 @@ function drawNode(node: Node, scrollAccumY: number, scrollAccumX = 0) {
     drawScrollbarH(rx, ry, rw, rh, s, node.id);
   }
 
-  if (pressing) ctx.restore();
+  if (scoped) ctx.restore();
   currentDrawWindow = prevDrawWindow;
 }
 
