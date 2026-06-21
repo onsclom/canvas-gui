@@ -6,8 +6,8 @@
     "packages/*"
   ],
   "scripts": {
-    "demos": "bun --filter canvas-gui-demos dev",
-    "landing": "bun --filter canvas-gui-landing dev",
+    "demos": "bun scripts/dev.ts demos",
+    "landing": "bun scripts/dev.ts landing",
     "typecheck": "bunx tsc --noEmit",
     "vendor": "bun ./scripts/vendor.ts"
   },
