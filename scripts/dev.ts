@@ -58,8 +58,27 @@ await build();
 
 const RELOAD_SNIPPET = `<script>new EventSource('/__reload').onmessage=()=>location.reload()</script>`;
 
-Bun.serve({
-  port,
+// Bun won't take over a port already held by a stale dev server — it would
+// throw EADDRINUSE and you'd keep hitting the old (frozen) bundle. So find a
+// free port and announce it loudly instead of colliding.
+function serveOn(startPort: number) {
+  for (let p = startPort; p < startPort + 20; p++) {
+    try {
+      return makeServer(p);
+    } catch (e) {
+      if (String((e as Error).message).includes("EADDRINUSE")) {
+        console.warn(`port ${p} in use (stale dev server?), trying ${p + 1}…`);
+        continue;
+      }
+      throw e;
+    }
+  }
+  throw new Error(`no free port in ${startPort}..${startPort + 20}`);
+}
+
+function makeServer(p: number) {
+  return Bun.serve({
+  port: p,
   async fetch(req) {
     const url = new URL(req.url);
     if (url.pathname === "/__reload") {
@@ -77,18 +96,23 @@ Bun.serve({
         },
       });
     }
-    let p = url.pathname === "/" ? "/index.html" : url.pathname;
-    const file = Bun.file(outdir + p);
+    const path = url.pathname === "/" ? "/index.html" : url.pathname;
+    const file = Bun.file(outdir + path);
     if (!(await file.exists())) return new Response("404", { status: 404 });
-    if (p === "/index.html") {
+    if (path === "/index.html") {
       const html = (await file.text()).replace("</body>", RELOAD_SNIPPET + "</body>");
       return new Response(html, { headers: { "content-type": "text/html" } });
     }
     return new Response(file, { headers: { "cache-control": "no-store" } });
   },
-});
+  });
+}
 
-console.log(`dev: ${pkg} on http://localhost:${port}/  (rebuilds + live-reloads on source changes)`);
+const server = serveOn(port);
+console.log(
+  `\n  ▶ dev: ${pkg} on http://localhost:${server.port}/` +
+    `  (rebuilds + live-reloads on source changes)\n`,
+);
 
 // watch both the package and the library source
 let debounce: ReturnType<typeof setTimeout> | null = null;

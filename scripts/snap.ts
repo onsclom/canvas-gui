@@ -158,6 +158,13 @@ async function drag(x1: number, y1: number, x2: number, y2: number) {
   await pause(60);
   await send("Input.dispatchMouseEvent", { type: "mouseReleased", x: x2, y: y2, button: "left", clickCount: 1 }, sessionId);
 }
+async function wheel(x: number, y: number, dx: number, dy: number, shift = false) {
+  await send("Input.dispatchMouseEvent", { type: "mouseMoved", x, y }, sessionId);
+  await send("Input.dispatchMouseEvent", {
+    type: "mouseWheel", x, y, deltaX: dx, deltaY: dy,
+    modifiers: shift ? 8 : 0,
+  }, sessionId);
+}
 async function key(k: string) {
   await send("Input.dispatchKeyEvent", { type: "keyDown", key: k, windowsVirtualKeyCode: k === "Enter" ? 13 : k === "Tab" ? 9 : 0 }, sessionId);
   await send("Input.dispatchKeyEvent", { type: "keyUp", key: k }, sessionId);
@@ -171,6 +178,10 @@ for (let a = 0; a < args.length; a++) {
     const [x1, y1, x2, y2] = args[++a]!.split(",").map(Number);
     await drag(x1!, y1!, x2!, y2!);
     await pause(200);
+  } else if (args[a] === "--wheel" || args[a] === "--shiftwheel") {
+    const [x, y, dx, dy] = args[++a]!.split(",").map(Number);
+    await wheel(x!, y!, dx!, dy!, args[a - 1] === "--shiftwheel");
+    await pause(200);
   } else if (args[a] === "--type") {
     await type(args[++a]!);
     await pause(150);
@@ -179,7 +190,7 @@ for (let a = 0; a < args.length; a++) {
     await pause(150);
   }
 }
-if (["--click", "--type", "--key", "--drag"].some((f) => args.includes(f))) {
+if (["--click", "--type", "--key", "--drag", "--wheel", "--shiftwheel"].some((f) => args.includes(f))) {
   await pause(400);
 }
 
