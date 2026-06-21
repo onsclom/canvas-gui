@@ -26,29 +26,6 @@ const state = {
 
 let _canvasW = 0;
 
-ui.onCommand((name) => {
-  switch (name) {
-    case "docs.click":
-      state.clicks++;
-      break;
-    case "docs.reset-count":
-      state.clicks = 0;
-      break;
-    case "docs.toggle-liked":
-      state.liked = !state.liked;
-      break;
-    case "docs.toggle-notif":
-      state.notifications = !state.notifications;
-      break;
-    case "docs.open-modal":
-      state.modalOpen = true;
-      break;
-    case "docs.close-modal":
-      state.modalOpen = false;
-      break;
-  }
-});
-
 // === helpers ===
 
 function h1(text: string) {
@@ -475,7 +452,7 @@ export function tick(ctx: CanvasRenderingContext2D, _dt: number) {
             if (
               ui.button("Click me", { id: "doc-click", radius: 5 }).clicked
             ) {
-              ui.cmd("docs.click");
+              state.clicks++;
             }
             ui.withTextColor(MUTED, () => {
               ui.withFont("13px ui-monospace, monospace", () => {
@@ -485,7 +462,7 @@ export function tick(ctx: CanvasRenderingContext2D, _dt: number) {
             if (
               ui.button("Reset", { id: "doc-reset", radius: 5 }).clicked
             ) {
-              ui.cmd("docs.reset-count");
+              state.clicks = 0;
             }
           });
         },
@@ -507,7 +484,7 @@ export function tick(ctx: CanvasRenderingContext2D, _dt: number) {
               state.liked,
               { id: "doc-liked", radius: 5, width: 100 },
             );
-            if (t.clicked) ui.cmd("docs.toggle-liked");
+            if (t.clicked) state.liked = !state.liked;
             ui.withTextColor(MUTED, () => {
               ui.withFont("13px ui-monospace, monospace", () => {
                 ui.label(`liked = ${state.liked}`);
@@ -797,7 +774,7 @@ export function tick(ctx: CanvasRenderingContext2D, _dt: number) {
               radius: 5,
             }).clicked
           ) {
-            ui.cmd("docs.open-modal");
+            state.modalOpen = true;
           }
         },
       );
@@ -820,31 +797,26 @@ export function tick(ctx: CanvasRenderingContext2D, _dt: number) {
       );
 
       section(
-        "Command buffer",
-        "Queue mutations during build; the handler runs at the start of the next frame, before any builder code. Hotkeys and clicks can emit the same command.",
+        "State & events",
+        "There's no event system to wire up. Mutate your own state right where the event happens — the next frame rebuilds from it. Conditional UI is a plain if.",
         [
-          "ui.onCommand((name) => {",
-          '  if (name === "count.reset") {',
-          "    state.clicks = 0;",
-          "  }",
-          "});",
+          "if (ui.button(\"+1\").clicked) state.clicks++;",
+          'if (ui.button("Reset").clicked) state.clicks = 0;',
           "",
-          '// during build:',
-          'if (ui.button("Reset").clicked) {',
-          '  ui.cmd("count.reset");',
-          "}",
+          "// later, reading the same state:",
+          'ui.label("count: " + state.clicks);',
         ],
         () => {
           ui.row({ gap: 12, align: "center" }, () => {
             if (
               ui.button("+1", { id: "doc-cmd-inc", radius: 5 }).clicked
             ) {
-              ui.cmd("docs.click");
+              state.clicks++;
             }
             if (
               ui.button("Reset", { id: "doc-cmd-reset", radius: 5 }).clicked
             ) {
-              ui.cmd("docs.reset-count");
+              state.clicks = 0;
             }
             ui.withTextColor(MUTED, () => {
               ui.withFont("13px ui-monospace, monospace", () => {
@@ -938,7 +910,7 @@ export function tick(ctx: CanvasRenderingContext2D, _dt: number) {
                 radius: 5,
               }).clicked
             ) {
-              ui.cmd("docs.close-modal");
+              state.modalOpen = false;
             }
             ui.withTextColor("#fff", () => {
               if (
@@ -950,13 +922,13 @@ export function tick(ctx: CanvasRenderingContext2D, _dt: number) {
                   bg: "#16a34a",
                 }).clicked
               ) {
-                ui.cmd("docs.close-modal");
+                state.modalOpen = false;
               }
             });
           });
         },
       );
     });
-    if (m.clicked) ui.cmd("docs.close-modal");
+    if (m.clicked) state.modalOpen = false;
   }
 }

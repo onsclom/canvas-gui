@@ -213,7 +213,7 @@ function updateMidiDevices() {
       const note = e.data[1] ?? 0;
       const velocity = e.data[2] ?? 0;
       if (command === 144 && velocity > 0) {
-        ui.cmd("melody.midi-note", { note });
+        handleMidiNote(note);
       }
     };
   });
@@ -239,59 +239,49 @@ if (
   state.midiSupported = false;
 }
 
-// === commands ===
+// === actions ===
 
-ui.onCommand((name, args) => {
-  switch (name) {
-    case "melody.set-mode":
-      stopAll();
-      state.mode = args!["mode"] as Mode;
+function setMode(mode: Mode) {
+  stopAll();
+  state.mode = mode;
+}
+
+function toggleInterval(i: number) {
+  if (state.intervals.has(i)) state.intervals.delete(i);
+  else state.intervals.add(i);
+}
+
+function applyPreset(p: string) {
+  switch (p) {
+    case "none":
+      state.intervals.clear();
       break;
-    case "melody.toggle-interval": {
-      const i = args!["i"] as number;
-      if (state.intervals.has(i)) state.intervals.delete(i);
-      else state.intervals.add(i);
+    case "steps":
+      state.intervals = new Set([1, 2]);
       break;
-    }
-    case "melody.preset": {
-      const p = args!["name"] as string;
-      switch (p) {
-        case "none":
-          state.intervals.clear();
-          break;
-        case "steps":
-          state.intervals = new Set([1, 2]);
-          break;
-        case "default":
-          state.intervals = new Set([1, 2, 3, 4, 5, 6, 7]);
-          break;
-        case "major":
-          state.intervals = new Set([0, 2, 4, 5, 7, 9, 11, 12]);
-          break;
-        case "all":
-          state.intervals = new Set(Array.from({ length: 15 }, (_, i) => i));
-          break;
-      }
+    case "default":
+      state.intervals = new Set([1, 2, 3, 4, 5, 6, 7]);
       break;
-    }
-    case "melody.start":
-      if (state.running) break;
-      if (state.intervals.size === 0) break;
-      state.running = true;
-      if (state.mode === "Metronome") startMetronome();
-      else startMidi();
+    case "major":
+      state.intervals = new Set([0, 2, 4, 5, 7, 9, 11, 12]);
       break;
-    case "melody.stop":
-      stopAll();
-      break;
-    case "melody.reset-stats":
-      state.stats = { correct: 0, incorrect: 0 };
-      break;
-    case "melody.midi-note":
-      handleMidiNote(args!["note"] as number);
+    case "all":
+      state.intervals = new Set(Array.from({ length: 15 }, (_, i) => i));
       break;
   }
-});
+}
+
+function start() {
+  if (state.running) return;
+  if (state.intervals.size === 0) return;
+  state.running = true;
+  if (state.mode === "Metronome") startMetronome();
+  else startMidi();
+}
+
+function resetStats() {
+  state.stats = { correct: 0, incorrect: 0 };
+}
 
 // === UI ===
 
@@ -309,7 +299,8 @@ export function tick(ctx: CanvasRenderingContext2D, dt: number) {
   // space toggles start/stop
   if (keysJustPressed.has(" ")) {
     if (state.intervals.size > 0) {
-      ui.cmd(state.running ? "melody.stop" : "melody.start");
+      if (state.running) stopAll();
+      else start();
     }
   }
 
@@ -357,7 +348,7 @@ export function tick(ctx: CanvasRenderingContext2D, dt: number) {
                   radius: BUTTON_RADIUS,
                 }).clicked
               ) {
-                ui.cmd("melody.set-mode", { mode: m });
+                setMode(m);
               }
             }
           }
@@ -511,7 +502,7 @@ function intervalGrid() {
               radius: 4,
             }).clicked
           ) {
-            ui.cmd("melody.toggle-interval", { i });
+            toggleInterval(i);
           }
         } else {
           if (
@@ -522,7 +513,7 @@ function intervalGrid() {
               radius: 4,
             }).clicked
           ) {
-            ui.cmd("melody.toggle-interval", { i });
+            toggleInterval(i);
           }
         }
       }
@@ -562,7 +553,7 @@ function presetRow() {
           font: "12px system-ui, sans-serif",
         }).clicked
       ) {
-        ui.cmd("melody.preset", { name: key });
+        applyPreset(key);
       }
     }
   });
@@ -596,8 +587,8 @@ function startStopButton() {
       radius: 8,
     }).clicked
   ) {
-    if (state.running) ui.cmd("melody.stop");
-    else ui.cmd("melody.start");
+    if (state.running) stopAll();
+    else start();
   }
 }
 
@@ -720,7 +711,7 @@ function statsCard() {
         height: 32,
       }).clicked
     ) {
-      ui.cmd("melody.reset-stats");
+      resetStats();
     }
   });
 }

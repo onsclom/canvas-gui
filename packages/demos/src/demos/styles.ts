@@ -11,23 +11,6 @@ const state = {
   vaporOn: false,
 };
 
-ui.onCommand((name) => {
-  switch (name) {
-    case "styles.brutal-toggle":
-      state.brutalOn = !state.brutalOn;
-      break;
-    case "styles.terminal-toggle":
-      state.terminalOn = !state.terminalOn;
-      break;
-    case "styles.pastel-toggle":
-      state.pastelOn = !state.pastelOn;
-      break;
-    case "styles.vapor-toggle":
-      state.vaporOn = !state.vaporOn;
-      break;
-  }
-});
-
 export function tick(ctx: CanvasRenderingContext2D, _dt: number) {
   const w = ctx.canvas.width / devicePixelRatio;
   const h = ctx.canvas.height / devicePixelRatio;
@@ -137,7 +120,7 @@ function brutalist() {
               },
             ).clicked
           ) {
-            ui.cmd("styles.brutal-toggle");
+            state.brutalOn = !state.brutalOn;
           }
           ui.row({ width: "grow", gap: 8 }, () => {
             ui.button("EXECUTE", {
@@ -228,7 +211,7 @@ function terminal() {
               },
             ).clicked
           ) {
-            ui.cmd("styles.terminal-toggle");
+            state.terminalOn = !state.terminalOn;
           }
           ui.row({ width: "grow", gap: 6 }, () => {
             ui.button("  ▶ run", {
@@ -319,7 +302,7 @@ function pastel() {
               },
             ).clicked
           ) {
-            ui.cmd("styles.pastel-toggle");
+            state.pastelOn = !state.pastelOn;
           }
           ui.row({ width: "grow", gap: 10 }, () => {
             ui.button("Save", {
@@ -401,7 +384,7 @@ function vaporwave() {
             },
           ).clicked
         ) {
-          ui.cmd("styles.vapor-toggle");
+          state.vaporOn = !state.vaporOn;
         }
         ui.row({ width: "grow", gap: 8 }, () => {
           ui.button("► PLAY", {

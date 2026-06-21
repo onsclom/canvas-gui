@@ -67,51 +67,6 @@ const state = {
   springCurrent: 0,
 };
 
-ui.onCommand((name, args) => {
-  switch (name) {
-    case "kitchen.select":
-      state.selectedId = args!["id"] as number;
-      break;
-    case "kitchen.toggle-starred":
-      state.starred = !state.starred;
-      break;
-    case "kitchen.toggle-notifications":
-      state.notifications = !state.notifications;
-      break;
-    case "kitchen.toggle-hardcore":
-      state.hardcore = !state.hardcore;
-      break;
-    case "kitchen.modal-open":
-      state.modalOpen = true;
-      break;
-    case "kitchen.modal-close":
-      state.modalOpen = false;
-      break;
-    case "kitchen.mini-toggle":
-      state.miniOpen = !state.miniOpen;
-      break;
-    case "kitchen.spring-bump":
-      state.springTarget += args!["d"] as number;
-      break;
-    case "kitchen.reset":
-      state.size = 1;
-      state.volume = 0.7;
-      state.detail = 0.5;
-      state.starred = true;
-      state.notifications = false;
-      state.hardcore = false;
-      state.selectedId = -1;
-      state.name = "";
-      state.email = "";
-      state.bio = "";
-      state.framework = "canvas-gui";
-      state.modalOpen = false;
-      state.miniOpen = false;
-      state.springTarget = 0;
-      break;
-  }
-});
-
 export function tick(ctx: CanvasRenderingContext2D, dt: number) {
   const w = ctx.canvas.width / devicePixelRatio;
   const h = ctx.canvas.height / devicePixelRatio;
@@ -159,7 +114,20 @@ export function tick(ctx: CanvasRenderingContext2D, dt: number) {
             if (
               ui.button("Reset all", { radius: BUTTON_RADIUS }).clicked
             ) {
-              ui.cmd("kitchen.reset");
+              state.size = 1;
+              state.volume = 0.7;
+              state.detail = 0.5;
+              state.starred = true;
+              state.notifications = false;
+              state.hardcore = false;
+              state.selectedId = -1;
+              state.name = "";
+              state.email = "";
+              state.bio = "";
+              state.framework = "canvas-gui";
+              state.modalOpen = false;
+              state.miniOpen = false;
+              state.springTarget = 0;
             }
           });
         },
@@ -199,7 +167,7 @@ export function tick(ctx: CanvasRenderingContext2D, dt: number) {
             radius: BUTTON_RADIUS,
           }).clicked
         ) {
-          ui.cmd("kitchen.mini-toggle");
+          state.miniOpen = !state.miniOpen;
         }
       },
     );
@@ -234,12 +202,12 @@ export function tick(ctx: CanvasRenderingContext2D, dt: number) {
               radius: BUTTON_RADIUS,
             }).clicked
           ) {
-            ui.cmd("kitchen.modal-close");
+            state.modalOpen = false;
           }
         },
       );
     });
-    if (m.clicked) ui.cmd("kitchen.modal-close");
+    if (m.clicked) state.modalOpen = false;
   }
 }
 
@@ -284,7 +252,7 @@ function leftPanel() {
             radius: BUTTON_RADIUS,
           }).clicked
         ) {
-          ui.cmd("kitchen.toggle-starred");
+          state.starred = !state.starred;
         }
         if (
           ui.toggle(
@@ -293,7 +261,7 @@ function leftPanel() {
             { id: "k-notif", width: 170, radius: BUTTON_RADIUS },
           ).clicked
         ) {
-          ui.cmd("kitchen.toggle-notifications");
+          state.notifications = !state.notifications;
         }
         if (
           ui.toggle(
@@ -302,7 +270,7 @@ function leftPanel() {
             { id: "k-hc", width: 100, radius: BUTTON_RADIUS },
           ).clicked
         ) {
-          ui.cmd("kitchen.toggle-hardcore");
+          state.hardcore = !state.hardcore;
         }
       });
 
@@ -376,7 +344,7 @@ function leftPanel() {
             radius: BUTTON_RADIUS,
           }).clicked
         ) {
-          ui.cmd("kitchen.modal-open");
+          state.modalOpen = true;
         }
         if (
           ui.button(state.miniOpen ? "Hide window" : "Open window", {
@@ -384,7 +352,7 @@ function leftPanel() {
             radius: BUTTON_RADIUS,
           }).clicked
         ) {
-          ui.cmd("kitchen.mini-toggle");
+          state.miniOpen = !state.miniOpen;
         }
       });
 
@@ -423,7 +391,7 @@ function leftPanel() {
                 radius: BUTTON_RADIUS,
               }).clicked
             ) {
-              ui.cmd("kitchen.spring-bump", { d });
+              state.springTarget += d;
             }
           }
         });
@@ -684,7 +652,7 @@ function rightPanel() {
                 });
               },
             );
-            if (c.clicked) ui.cmd("kitchen.select", { id: i });
+            if (c.clicked) state.selectedId = i;
           }
         },
       );

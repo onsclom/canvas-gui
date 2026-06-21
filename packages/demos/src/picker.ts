@@ -78,15 +78,10 @@ window.addEventListener("hashchange", () => {
   state.current = demoFromHash();
 });
 
-// Command-buffer pattern (Part 8): builder code emits commands during the build
-// phase; the handler runs at the start of the next frame, before any builder code,
-// so all state mutations happen at a single, predictable point.
-ui.onCommand((name, args) => {
-  if (name === "picker.set") {
-    state.current = args!["demo"] as DemoKey;
-    if (location.hash !== `#${state.current}`) location.hash = state.current;
-  }
-});
+function setDemo(key: DemoKey) {
+  state.current = key;
+  if (location.hash !== `#${key}`) location.hash = key;
+}
 
 export function tick(ctx: CanvasRenderingContext2D, dt: number) {
   demos[state.current].tick(ctx, dt);
@@ -122,7 +117,7 @@ export function tick(ctx: CanvasRenderingContext2D, dt: number) {
               radius: 5,
             }).clicked
           ) {
-            ui.cmd("picker.set", { demo: key });
+            setDemo(key);
           }
         }
       }

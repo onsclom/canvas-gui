@@ -13,36 +13,6 @@ const state = {
   nextId: 1,
 };
 
-ui.onCommand((name, args) => {
-  switch (name) {
-    case "windows.inc":
-      state.count++;
-      break;
-    case "windows.dec":
-      state.count--;
-      break;
-    case "windows.add-note":
-      state.notes.push(`Note #${state.notes.length + 1}`);
-      break;
-    case "windows.spawn": {
-      const n = state.nextId++;
-      // cascade new windows so they don't all stack on the same spot
-      const off = (state.windows.length % 8) * 28;
-      state.windows.push({
-        id: `win-spawn-${n}`,
-        title: `Window ${n}`,
-        kind: "plain",
-        x: 180 + off,
-        y: 140 + off,
-      });
-      break;
-    }
-    case "windows.close":
-      state.windows = state.windows.filter((w) => w.id !== args!["id"]);
-      break;
-  }
-});
-
 export function tick(ctx: CanvasRenderingContext2D, _dt: number) {
   const w = ctx.canvas.width / devicePixelRatio;
   const h = ctx.canvas.height / devicePixelRatio;
@@ -74,7 +44,16 @@ export function tick(ctx: CanvasRenderingContext2D, _dt: number) {
           textColor: "#052e16",
         }).clicked
       ) {
-        ui.cmd("windows.spawn");
+        const n = state.nextId++;
+        // cascade new windows so they don't all stack on the same spot
+        const off = (state.windows.length % 8) * 28;
+        state.windows.push({
+          id: `win-spawn-${n}`,
+          title: `Window ${n}`,
+          kind: "plain",
+          x: 180 + off,
+          y: 140 + off,
+        });
       }
       ui.spacer({ width: "grow" });
       ui.withTextColor("#9ca3af", () => {
@@ -114,7 +93,7 @@ export function tick(ctx: CanvasRenderingContext2D, _dt: number) {
       },
       () => renderWindowBody(win),
     );
-    if (c.closeClicked) ui.cmd("windows.close", { id: win.id });
+    if (c.closeClicked) state.windows = state.windows.filter((w) => w.id !== win.id);
   }
 }
 
@@ -140,7 +119,7 @@ function counterBody(wid: string) {
         font: "bold 18px system-ui, sans-serif",
       }).clicked
     ) {
-      ui.cmd("windows.dec");
+      state.count--;
     }
     ui.col({ width: "grow", align: "center" }, () => {
       ui.withFont("bold 28px ui-monospace, monospace", () => {
@@ -156,7 +135,7 @@ function counterBody(wid: string) {
         font: "bold 18px system-ui, sans-serif",
       }).clicked
     ) {
-      ui.cmd("windows.inc");
+      state.count++;
     }
   });
 }
@@ -198,7 +177,7 @@ function notesBody(wid: string) {
       radius: 5,
     }).clicked
   ) {
-    ui.cmd("windows.add-note");
+    state.notes.push(`Note #${state.notes.length + 1}`);
   }
 }
 

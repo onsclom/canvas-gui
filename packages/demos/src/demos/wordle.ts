@@ -84,51 +84,49 @@ function bestLetterStatus(letter: string): LetterStatus {
   return best;
 }
 
-// Both physical keys and virtual key clicks emit the same commands —
-// one mutation path (Part 8).
-ui.onCommand((name, args) => {
-  if (state.status !== "playing" && name !== "wordle.reset") return;
-
-  switch (name) {
-    case "wordle.input": {
-      const k = String(args!["key"]).toUpperCase();
-      if (state.current.length < COLS && /^[A-Z]$/.test(k)) {
-        state.current += k;
-        state.message = "";
-      }
-      break;
-    }
-    case "wordle.backspace":
-      state.current = state.current.slice(0, -1);
-      state.message = "";
-      break;
-    case "wordle.submit": {
-      if (state.current.length !== COLS) {
-        state.message = "Not enough letters";
-        break;
-      }
-      state.guesses.push(state.current);
-      if (state.current === state.target) {
-        state.status = "won";
-        state.message = `Solved in ${state.guesses.length}!`;
-      } else if (state.guesses.length >= ROWS) {
-        state.status = "lost";
-        state.message = `The word was ${state.target}`;
-      } else {
-        state.message = "";
-      }
-      state.current = "";
-      break;
-    }
-    case "wordle.reset":
-      state.target = pickWord();
-      state.guesses = [];
-      state.current = "";
-      state.status = "playing";
-      state.message = "";
-      break;
+// Both physical keys and virtual key clicks share one mutation path (Part 8).
+// Each action is a no-op unless the game is playing (reset is always allowed).
+function inputLetter(key: string) {
+  if (state.status !== "playing") return;
+  const k = String(key).toUpperCase();
+  if (state.current.length < COLS && /^[A-Z]$/.test(k)) {
+    state.current += k;
+    state.message = "";
   }
-});
+}
+
+function backspace() {
+  if (state.status !== "playing") return;
+  state.current = state.current.slice(0, -1);
+  state.message = "";
+}
+
+function submit() {
+  if (state.status !== "playing") return;
+  if (state.current.length !== COLS) {
+    state.message = "Not enough letters";
+    return;
+  }
+  state.guesses.push(state.current);
+  if (state.current === state.target) {
+    state.status = "won";
+    state.message = `Solved in ${state.guesses.length}!`;
+  } else if (state.guesses.length >= ROWS) {
+    state.status = "lost";
+    state.message = `The word was ${state.target}`;
+  } else {
+    state.message = "";
+  }
+  state.current = "";
+}
+
+function reset() {
+  state.target = pickWord();
+  state.guesses = [];
+  state.current = "";
+  state.status = "playing";
+  state.message = "";
+}
 
 const C_CORRECT = "#22c55e";
 const C_PRESENT = "#eab308";
@@ -167,11 +165,11 @@ export function tick(ctx: CanvasRenderingContext2D, _dt: number) {
   // route physical keyboard input through the same commands as virtual keys
   for (const k of keysJustPressed) {
     if (state.status === "playing") {
-      if (k === "Enter") ui.cmd("wordle.submit");
-      else if (k === "Backspace") ui.cmd("wordle.backspace");
-      else if (/^[a-zA-Z]$/.test(k)) ui.cmd("wordle.input", { key: k });
+      if (k === "Enter") submit();
+      else if (k === "Backspace") backspace();
+      else if (/^[a-zA-Z]$/.test(k)) inputLetter(k);
     } else if (k === "Enter") {
-      ui.cmd("wordle.reset");
+      reset();
     }
   }
 
@@ -222,8 +220,8 @@ export function tick(ctx: CanvasRenderingContext2D, _dt: number) {
                   font: "bold 12px system-ui, sans-serif",
                 }).clicked
               ) {
-                if (state.status === "playing") ui.cmd("wordle.submit");
-                else ui.cmd("wordle.reset");
+                if (state.status === "playing") submit();
+                else reset();
               }
             }
             for (const letter of KEY_ROWS[ri]!) {
@@ -239,7 +237,7 @@ export function tick(ctx: CanvasRenderingContext2D, _dt: number) {
                   font: "bold 18px system-ui, sans-serif",
                 }).clicked
               ) {
-                ui.cmd("wordle.backspace");
+                backspace();
               }
             }
           });
@@ -256,7 +254,7 @@ export function tick(ctx: CanvasRenderingContext2D, _dt: number) {
             radius: 6,
           }).clicked
         ) {
-          ui.cmd("wordle.reset");
+          reset();
         }
       }
     },
@@ -317,7 +315,7 @@ function drawKey(letter: string) {
 
   if (ui.button(letter, opts).clicked) {
     if (state.status === "playing") {
-      ui.cmd("wordle.input", { key: letter });
+      inputLetter(letter);
     }
   }
 }

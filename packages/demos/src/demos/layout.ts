@@ -18,32 +18,6 @@ const CARD_RADIUS = 8;
 const BUTTON_RADIUS = 5;
 const CARD_BORDER = "rgba(255,255,255,0.06)";
 
-ui.onCommand((name, args) => {
-  switch (name) {
-    case "layout.section":
-      state.section = args!["section"] as Section;
-      break;
-    case "layout.toggle-dark":
-      state.dark = !state.dark;
-      break;
-    case "layout.toggle-notifications":
-      state.notifications = !state.notifications;
-      break;
-    case "layout.reset":
-      state.volume = 0.7;
-      state.brightness = 0.5;
-      state.detail = 0.5;
-      state.dark = true;
-      state.notifications = false;
-      break;
-    case "layout.cycle-section": {
-      const i = sections.indexOf(state.section);
-      state.section = sections[(i + 1) % sections.length]!;
-      break;
-    }
-  }
-});
-
 export function tick(ctx: CanvasRenderingContext2D, dt: number) {
   const w = ctx.canvas.width / devicePixelRatio;
   const h = ctx.canvas.height / devicePixelRatio;
@@ -123,7 +97,7 @@ export function tick(ctx: CanvasRenderingContext2D, dt: number) {
                       radius: BUTTON_RADIUS,
                     }).clicked
                   ) {
-                    ui.cmd("layout.section", { section: sec });
+                    state.section = sec;
                   }
                 }
               }
@@ -197,7 +171,7 @@ export function tick(ctx: CanvasRenderingContext2D, dt: number) {
                         { id: "dark", width: 70, radius: BUTTON_RADIUS },
                       ).clicked
                     ) {
-                      ui.cmd("layout.toggle-dark");
+                      state.dark = !state.dark;
                     }
                   },
                 );
@@ -218,7 +192,7 @@ export function tick(ctx: CanvasRenderingContext2D, dt: number) {
                         },
                       ).clicked
                     ) {
-                      ui.cmd("layout.toggle-notifications");
+                      state.notifications = !state.notifications;
                     }
                   },
                 );
@@ -243,7 +217,11 @@ export function tick(ctx: CanvasRenderingContext2D, dt: number) {
                         radius: BUTTON_RADIUS,
                       }).clicked
                     ) {
-                      ui.cmd("layout.reset");
+                      state.volume = 0.7;
+                      state.brightness = 0.5;
+                      state.detail = 0.5;
+                      state.dark = true;
+                      state.notifications = false;
                     }
                   });
                 });
@@ -298,6 +276,7 @@ export function tick(ctx: CanvasRenderingContext2D, dt: number) {
       font: "bold 22px system-ui, sans-serif",
     }).clicked
   ) {
-    ui.cmd("layout.cycle-section");
+    const i = sections.indexOf(state.section);
+    state.section = sections[(i + 1) % sections.length]!;
   }
 }

@@ -25,25 +25,6 @@ const state = {
   brush: "#4ade80",
 };
 
-ui.onCommand((name, args) => {
-  switch (name) {
-    case "os.open": {
-      const app = args!["app"] as App;
-      if (!state.open.includes(app)) state.open.push(app);
-      break;
-    }
-    case "os.close":
-      state.open = state.open.filter((a) => a !== (args!["app"] as App));
-      break;
-    case "os.run":
-      runCode();
-      break;
-    case "os.clear-paint":
-      state.pixels = new Array(GRID * GRID).fill("");
-      break;
-  }
-});
-
 function runCode() {
   const logs: string[] = [];
   const fakeConsole = {
@@ -95,7 +76,7 @@ export function tick(ctx: CanvasRenderingContext2D, _dt: number) {
           font: "13px system-ui, sans-serif",
         }).clicked
       ) {
-        ui.cmd("os.open", { app: app.id });
+        if (!state.open.includes(app.id)) state.open.push(app.id);
       }
     }
   });
@@ -118,7 +99,7 @@ export function tick(ctx: CanvasRenderingContext2D, _dt: number) {
       },
       () => appBody(app),
     );
-    if (c.closeClicked) ui.cmd("os.close", { app });
+    if (c.closeClicked) state.open = state.open.filter((a) => a !== app);
   }
 
   // taskbar
@@ -150,7 +131,8 @@ export function tick(ctx: CanvasRenderingContext2D, _dt: number) {
             font: "12px system-ui, sans-serif",
           }).clicked
         ) {
-          ui.cmd(isOpen ? "os.close" : "os.open", { app: app.id });
+          if (isOpen) state.open = state.open.filter((a) => a !== app.id);
+          else if (!state.open.includes(app.id)) state.open.push(app.id);
         }
       }
       ui.spacer({ width: "grow" });
@@ -219,7 +201,7 @@ function jsApp() {
         textColor: "#052e16",
       }).clicked
     ) {
-      ui.cmd("os.run");
+      runCode();
     }
     ui.withTextColor("#9ca3af", () =>
       ui.withFont("11px system-ui, sans-serif", () => ui.label("output:")),
@@ -274,7 +256,7 @@ function paintApp() {
     }
     ui.spacer({ width: "grow" });
     if (ui.button("Clear", { id: "os-paint-clear", height: 26, radius: 6 }).clicked) {
-      ui.cmd("os.clear-paint");
+      state.pixels = new Array(GRID * GRID).fill("");
     }
   });
   // pixel grid — click or drag to paint

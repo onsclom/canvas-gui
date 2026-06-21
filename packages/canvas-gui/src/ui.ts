@@ -176,8 +176,6 @@ type WidgetState = {
   lastTouched: number;
 };
 
-type CmdHandler = (name: string, args?: Record<string, unknown>) => void;
-
 let ctx: CanvasRenderingContext2D | null = null;
 let canvasW = 0;
 let canvasH = 0;
@@ -224,9 +222,6 @@ const widthStack: SizeSpec[] = [];
 const heightStack: SizeSpec[] = [];
 const fontStack: string[] = [];
 const focusRingStack: string[] = [];
-
-const cmdQueue: Array<{ name: string; args?: Record<string, unknown> }> = [];
-const cmdHandlers: CmdHandler[] = [];
 
 // === page-wide text selection (HTML-like) ===
 // Every plain (left-aligned, non-clickable) text line drawn this frame is
@@ -423,11 +418,6 @@ function widgetComm(id: string): Comm {
 // === lifecycle ===
 
 export function frameStart(c: CanvasRenderingContext2D, deltaMs: number) {
-  if (cmdQueue.length > 0) {
-    const queue = cmdQueue.slice();
-    cmdQueue.length = 0;
-    for (const q of queue) for (const h of cmdHandlers) h(q.name, q.args);
-  }
   ctx = c;
   canvasW = c.canvas.width / devicePixelRatio;
   canvasH = c.canvas.height / devicePixelRatio;
@@ -1630,15 +1620,6 @@ export function blur(): void {
 }
 export function isFocused(id: string): boolean {
   return focused === id;
-}
-
-// === command buffer ===
-
-export function cmd(name: string, args?: Record<string, unknown>): void {
-  cmdQueue.push({ name, args });
-}
-export function onCommand(handler: CmdHandler): void {
-  cmdHandlers.push(handler);
 }
 
 // === layout ===

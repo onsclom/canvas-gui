@@ -16,17 +16,6 @@ const state = {
   liked: false,
 };
 
-ui.onCommand((name, args) => {
-  switch (name) {
-    case "lp.bump":
-      state.count += args!["d"] as number;
-      break;
-    case "lp.like":
-      state.liked = !state.liked;
-      break;
-  }
-});
-
 export function tick(ctx: CanvasRenderingContext2D, _dt: number) {
   const w = ctx.canvas.width / devicePixelRatio;
   const h = ctx.canvas.height / devicePixelRatio;
@@ -257,7 +246,7 @@ function miniDemo() {
                     font: "bold 14px system-ui, sans-serif",
                   }).clicked
                 ) {
-                  ui.cmd("lp.bump", { d });
+                  state.count += d;
                 }
               }
             });
@@ -272,7 +261,7 @@ function miniDemo() {
                 font: "bold 14px system-ui, sans-serif",
               },
             );
-            if (t.clicked) ui.cmd("lp.like");
+            if (t.clicked) state.liked = !state.liked;
           });
         });
       },

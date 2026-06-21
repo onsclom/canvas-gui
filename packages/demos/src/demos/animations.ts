@@ -19,17 +19,6 @@ const state = {
   hueTarget: 200,
 };
 
-ui.onCommand((name, args) => {
-  switch (name) {
-    case "anim.bump":
-      state.targetCount += args!["d"] as number;
-      break;
-    case "anim.set-hue":
-      state.hueTarget = args!["h"] as number;
-      break;
-  }
-});
-
 export function tick(ctx: CanvasRenderingContext2D, _dt: number) {
   const w = ctx.canvas.width / devicePixelRatio;
   const h = ctx.canvas.height / devicePixelRatio;
@@ -117,7 +106,7 @@ export function tick(ctx: CanvasRenderingContext2D, _dt: number) {
                     font: "bold 14px system-ui, sans-serif",
                   }).clicked
                 ) {
-                  ui.cmd("anim.bump", { d });
+                  state.targetCount += d;
                 }
               }
             });
@@ -249,7 +238,7 @@ export function tick(ctx: CanvasRenderingContext2D, _dt: number) {
                 border: isSelected ? "#fff" : undefined,
               }).clicked
             ) {
-              ui.cmd("anim.set-hue", { h });
+              state.hueTarget = h;
             }
           }
         });
