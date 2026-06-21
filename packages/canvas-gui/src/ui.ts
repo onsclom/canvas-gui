@@ -221,6 +221,12 @@ let stack: Node[] = [];
 let hot: string | null = null;
 let active: string | null = null;
 let nextHot: string | null = null;
+// whether the hot node is an interactive widget (clickable / scrollbar thumb).
+// Passive containers (scrollables, cards) claim `hot` for z-order + scroll
+// state but must NOT block page text selection or the text cursor — only
+// genuine widgets do. Tracked alongside hot/nextHot.
+let hotClickable = false;
+let nextHotClickable = false;
 let nextScrollTarget: string | null = null;
 let nextCursor: string | null = null;
 let focused: string | null = null;
@@ -305,9 +311,11 @@ function scopeId(id: string): string {
 }
 
 // === page-wide text selection (HTML-like) ===
-// Every plain (left-aligned, non-clickable) text line drawn this frame is
-// recorded as a TextRun in document order. A drag over those runs builds a
-// selection spanning runs; Ctrl+C copies it. Disabled via setTextSelectable.
+// Every plain (non-widget) text line drawn this frame is recorded as a TextRun
+// in document order — any alignment, anywhere in the tree, including inside
+// scrollables and cards. Text in widgets (buttons, inputs, disabled nodes) is
+// excluded. A drag over those runs builds a selection spanning runs; Ctrl+C
+// copies it. Disabled via setTextSelectable.
 type TextRun = { text: string; x: number; y: number; h: number; font: string };
 type RunPos = { run: number; off: number };
 let textRuns: TextRun[] = [];
@@ -552,6 +560,7 @@ export function frameStart(c: CanvasRenderingContext2D, deltaMs: number) {
 export function frameEnd() {
   if (!ctx) return;
   nextHot = null;
+  nextHotClickable = false;
   nextScrollTarget = null;
   nextCursor = null;
   focusList.length = 0;
@@ -574,6 +583,7 @@ export function frameEnd() {
   }
 
   hot = nextHot;
+  hotClickable = nextHotClickable;
 
   // keyboard navigation
   if (keysJustPressed.has("Tab") && focusList.length > 0) {
@@ -627,8 +637,10 @@ export function frameEnd() {
   // collected during the draw pass above — ctx is still valid here.
   if (pageSelEnabled) {
     if (mouse.justLeftClicked) {
+      // start a selection unless the press landed on an interactive widget;
+      // passive containers (scrollables, cards) that own `hot` don't block it.
       const startHit =
-        hot === null ? pageSelStartHit(mouse.x, mouse.y) : null;
+        !hotClickable ? pageSelStartHit(mouse.x, mouse.y) : null;
       pageSelAnchor = pageSelFocus = startHit;
       pageSelDragging = startHit !== null;
     }
@@ -2344,7 +2356,7 @@ function recordTextRun(
 
   if (
     pageSelEnabled &&
-    nextHot === null &&
+    !nextHotClickable &&
     nextCursor === null &&
     mouse.onCanvas &&
     mouse.y >= y - h / 2 &&
@@ -2441,6 +2453,7 @@ function drawNode(node: Node, scrollAccumY: number, scrollAccumX = 0) {
     // last-wins z-order: latest call with cursor over wins hot
     if (hit(s.rect)) {
       nextHot = node.id;
+      nextHotClickable = !!node.clickable;
       if (node.scrollable) nextScrollTarget = node.id;
       if (node.cursor) nextCursor = node.cursor;
     }
@@ -2572,12 +2585,14 @@ function drawNode(node: Node, scrollAccumY: number, scrollAccumX = 0) {
       ctx.fillRect(textLeft + preW, ry + rh / 2 - fh / 2, selW, fh);
     }
 
-    // plain left-aligned text outside any clickable subtree is page-selectable:
-    // record each visual line (which also paints its selection highlight)
+    // any plain (non-widget) text is page-selectable, regardless of alignment —
+    // centered prose selects just like left-aligned, matching HTML. Records each
+    // visual line (which also paints its selection highlight). Excluded: text
+    // inside widgets (clickable / text fields) and any clickable subtree.
     const selectable =
       pageSelEnabled &&
-      node.textAlign === "left" &&
       !node.clickable &&
+      !node.disabled &&
       node.caretAt === undefined &&
       node.selStart === undefined &&
       inClickable === 0;
@@ -2591,7 +2606,14 @@ function drawNode(node: Node, scrollAccumY: number, scrollAccumX = 0) {
       const startY = ry + node.padding.t + lineH / 2;
       if (selectable) {
         for (let i = 0; i < node.wrappedLines.length; i++) {
-          recordTextRun(node.wrappedLines[i]!, tx, startY + i * lineH, lineH, node.font);
+          const line = node.wrappedLines[i]!;
+          // record the glyph left edge so selection hit-testing lines up:
+          // centered lines start half their width left of the center point
+          const lineLeft =
+            node.textAlign === "center"
+              ? tx - ctx.measureText(line).width / 2
+              : tx;
+          recordTextRun(line, lineLeft, startY + i * lineH, lineH, node.font);
         }
       }
       ctx.fillStyle = node.textColor ?? theme.fg;
@@ -2600,7 +2622,8 @@ function drawNode(node: Node, scrollAccumY: number, scrollAccumX = 0) {
         ctx.fillText(node.wrappedLines[i]!, tx, startY + i * lineH);
       }
     } else {
-      if (selectable) recordTextRun(node.text, tx, ry + rh / 2, fh, node.font);
+      // textLeft is the glyph left edge for both alignments (see above)
+      if (selectable) recordTextRun(node.text, textLeft, ry + rh / 2, fh, node.font);
       ctx.fillStyle = node.textColor ?? theme.fg;
       ctx.textAlign = node.textAlign;
       ctx.fillText(node.text, tx, ry + rh / 2);
@@ -2710,6 +2733,7 @@ function drawScrollbar(
 
   if (overThumb || isActive) {
     nextHot = thumbId;
+    nextHotClickable = true; // grabbing the scrollbar — not a text selection
     nextCursor = isActive ? "grabbing" : "grab";
   }
 
@@ -2794,6 +2818,7 @@ function drawScrollbarH(
 
   if (overThumb || isActive) {
     nextHot = thumbId;
+    nextHotClickable = true; // grabbing the scrollbar — not a text selection
     nextCursor = isActive ? "grabbing" : "grab";
   }
 
