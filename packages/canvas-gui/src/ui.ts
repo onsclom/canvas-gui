@@ -2369,11 +2369,15 @@ function recordTextRun(
   }
 }
 
-// nearest run + char offset to a point (used while dragging a selection)
+// nearest run + char offset to a point (used while dragging a selection).
+// Picks by vertical distance first (which text row the cursor is on), then by
+// horizontal distance within that row — so dragging across multi-column layouts
+// (e.g. code beside prose) lands on the column actually under the cursor instead
+// of the first run that happens to share the row.
 function pageCaretAt(mx: number, my: number): RunPos | null {
   if (textRuns.length === 0 || !ctx) return null;
   let best = -1;
-  let bestDy = Infinity;
+  let bestScore = Infinity;
   for (let i = 0; i < textRuns.length; i++) {
     const r = textRuns[i]!;
     const dy =
@@ -2382,8 +2386,14 @@ function pageCaretAt(mx: number, my: number): RunPos | null {
         : my > r.y + r.h / 2
           ? my - (r.y + r.h / 2)
           : 0;
-    if (dy < bestDy) {
-      bestDy = dy;
+    ctx.font = r.font;
+    const rw = ctx.measureText(r.text).width;
+    const dx = mx < r.x ? r.x - mx : mx > r.x + rw ? mx - (r.x + rw) : 0;
+    // vertical distance dominates so the correct row always wins; horizontal
+    // distance only breaks ties between runs sharing a row.
+    const score = dy * 1e6 + dx;
+    if (score < bestScore) {
+      bestScore = score;
       best = i;
     }
   }
