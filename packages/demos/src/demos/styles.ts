@@ -298,6 +298,7 @@ function pastel() {
               height: 34,
               radius: 17,
               bg: "#fce4ec",
+              fillColor: "#f48fb1",
               textColor: "#3a2530",
               font: "13px system-ui, sans-serif",
               precision: 2,

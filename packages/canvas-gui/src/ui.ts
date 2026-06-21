@@ -72,6 +72,7 @@ export type NodeOpts = {
   font?: string;
   wrap?: boolean;
   fillBar?: number; // 0..1
+  fillColor?: string; // color of the filled portion of a fillBar (slider)
   cursor?: string;  // CSS cursor when hovered; defaults to "pointer" for clickable
   caretAt?: number; // draw a blinking text caret at this character index
   zOrder?: number;  // higher = drawn later among deferred-abs entries
@@ -113,6 +114,7 @@ type Node = {
   wrap: boolean;
   wrappedLines?: string[];
   fillBar?: number;
+  fillColor?: string;
   cursor?: string;
   caretAt?: number;
   zOrder: number;
@@ -692,6 +694,7 @@ function makeNode(opts: NodeOpts): Node {
     font,
     wrap: !!opts.wrap,
     fillBar: opts.fillBar,
+    fillColor: opts.fillColor,
     cursor: opts.cursor ?? (opts.clickable ? "pointer" : undefined),
     caretAt: opts.caretAt,
     zOrder: opts.zOrder ?? 0,
@@ -2043,10 +2046,16 @@ function drawNode(node: Node, scrollAccumY: number, scrollAccumX = 0) {
   }
 
   if (node.fillBar !== undefined) {
-    ctx.fillStyle = TRACK;
+    // track defaults to the dark TRACK but follows the node's bg when themed,
+    // and the fill can be themed via fillColor — so a light/custom slider keeps
+    // readable contrast instead of always getting the neutral dark fill
+    ctx.fillStyle =
+      node.bg !== undefined && node.bg !== "auto" && node.bg !== "accent"
+        ? (node.bg as string)
+        : TRACK;
     setRectPath(rx, ry, rw, rh, node.radius);
     ctx.fill();
-    ctx.fillStyle = resolveBg("auto", hotT, activeT);
+    ctx.fillStyle = node.fillColor ?? resolveBg("auto", hotT, activeT);
     setRectPath(
       rx,
       ry,
