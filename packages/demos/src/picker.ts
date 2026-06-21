@@ -10,6 +10,7 @@ import { tick as animationsTick } from "./demos/animations";
 import { tick as stylesTick } from "./demos/styles";
 import { tick as sevenguisTick } from "./demos/sevenguis";
 import { tick as perfTick } from "./demos/perf";
+import { tick as physicsTick } from "./demos/physics";
 
 type DemoKey =
   | "docs"
@@ -22,7 +23,8 @@ type DemoKey =
   | "anim"
   | "styles"
   | "sevenguis"
-  | "perf";
+  | "perf"
+  | "physics";
 
 const demos: Record<
   DemoKey,
@@ -39,6 +41,7 @@ const demos: Record<
   styles: { name: "Styles", tick: stylesTick },
   sevenguis: { name: "7GUIs", tick: sevenguisTick },
   perf: { name: "Perf", tick: perfTick },
+  physics: { name: "Physics", tick: physicsTick },
 };
 
 const keys: DemoKey[] = [
@@ -53,6 +56,7 @@ const keys: DemoKey[] = [
   "styles",
   "sevenguis",
   "perf",
+  "physics",
 ];
 
 // deep-linking: the current demo is reflected in the URL hash (#docs, #kitchen,
