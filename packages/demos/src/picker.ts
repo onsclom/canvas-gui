@@ -15,6 +15,7 @@ import { tick as treesTick } from "./demos/trees";
 import { tick as osTick } from "./demos/os";
 import { tick as chartsTick } from "./demos/charts";
 import { tick as chatTick } from "./demos/chat";
+import { tick as datagridTick } from "./demos/datagrid";
 
 type DemoKey =
   | "docs"
@@ -32,7 +33,8 @@ type DemoKey =
   | "trees"
   | "os"
   | "charts"
-  | "chat";
+  | "chat"
+  | "datagrid";
 
 const demos: Record<
   DemoKey,
@@ -54,6 +56,7 @@ const demos: Record<
   os: { name: "OS", tick: osTick },
   charts: { name: "Charts", tick: chartsTick },
   chat: { name: "Chat", tick: chatTick },
+  datagrid: { name: "Data grid", tick: datagridTick },
 };
 
 const keys: DemoKey[] = [
@@ -73,6 +76,7 @@ const keys: DemoKey[] = [
   "os",
   "charts",
   "chat",
+  "datagrid",
 ];
 
 // deep-linking: the current demo is reflected in the URL hash (#docs, #kitchen,
