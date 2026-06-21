@@ -61,6 +61,8 @@ const { sessionId } = await send("Target.attachToTarget", { targetId, flatten: t
 
 await send("Page.enable", {}, sessionId);
 await send("Runtime.enable", {}, sessionId);
+await send("Network.enable", {}, sessionId);
+await send("Network.setCacheDisabled", { cacheDisabled: true }, sessionId);
 await send("Emulation.setDeviceMetricsOverride", {
   width, height, deviceScaleFactor: scale, mobile,
 }, sessionId);
