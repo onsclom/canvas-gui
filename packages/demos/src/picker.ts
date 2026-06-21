@@ -46,13 +46,26 @@ const keys: DemoKey[] = [
   "anim",
   "styles",
 ];
-const state = { current: "orbit" as DemoKey };
+
+// deep-linking: the current demo is reflected in the URL hash (#docs, #kitchen,
+// …) so you can link straight to one and reloads stay put. Handy for testing.
+function demoFromHash(): DemoKey {
+  const h = location.hash.replace(/^#/, "") as DemoKey;
+  return keys.includes(h) ? h : "orbit";
+}
+const state = { current: demoFromHash() };
+window.addEventListener("hashchange", () => {
+  state.current = demoFromHash();
+});
 
 // Command-buffer pattern (Part 8): builder code emits commands during the build
 // phase; the handler runs at the start of the next frame, before any builder code,
 // so all state mutations happen at a single, predictable point.
 ui.onCommand((name, args) => {
-  if (name === "picker.set") state.current = args!["demo"] as DemoKey;
+  if (name === "picker.set") {
+    state.current = args!["demo"] as DemoKey;
+    if (location.hash !== `#${state.current}`) location.hash = state.current;
+  }
 });
 
 export function tick(ctx: CanvasRenderingContext2D, dt: number) {

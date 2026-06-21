@@ -12,7 +12,8 @@
     "vendor": "bun ./scripts/vendor.ts"
   },
   "devDependencies": {
-    "@types/bun": "latest"
+    "@types/bun": "latest",
+    "playwright": "^1.61.0"
   },
   "peerDependencies": {
     "typescript": "^5"
