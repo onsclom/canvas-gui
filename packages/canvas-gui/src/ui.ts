@@ -1,16 +1,44 @@
 import { keysDown, keysJustPressed, keysTyped, mouse } from "./input";
 
-const FONT = "14px system-ui, sans-serif";
-const BG = "#374151";
-const BG_HOT = "#4b5563";
-const BG_ACTIVE = "#6b7280";
-const FG = "#f3f4f6";
-const ACCENT = "#4ade80";
-const ACCENT_HOT = "#86efac";
-const ACCENT_FG = "#052e16";
-const TRACK = "#0f172a";
-const FOCUS_RING = "#4ade80";
-const SELECTION_BG = "rgba(74,222,128,0.30)";
+// Global theme the built-ins read. Override any subset with setTheme(); good
+// for brand colors, light/dark, a custom default font/radius across the app.
+export type Theme = {
+  font: string;
+  fontMono: string;
+  bg: string;
+  bgHot: string;
+  bgActive: string;
+  fg: string;
+  muted: string;
+  accent: string;
+  accentHot: string;
+  accentFg: string;
+  track: string;
+  focusRing: string;
+  selection: string;
+  radius: number;
+};
+
+export const theme: Theme = {
+  font: "14px system-ui, sans-serif",
+  fontMono: "13px ui-monospace, Menlo, Consolas, monospace",
+  bg: "#374151",
+  bgHot: "#4b5563",
+  bgActive: "#6b7280",
+  fg: "#f3f4f6",
+  muted: "#9ca3af",
+  accent: "#4ade80",
+  accentHot: "#86efac",
+  accentFg: "#052e16",
+  track: "#0f172a",
+  focusRing: "#4ade80",
+  selection: "rgba(74,222,128,0.30)",
+  radius: 0,
+};
+
+export function setTheme(partial: Partial<Theme>): void {
+  Object.assign(theme, partial);
+}
 
 const BUTTON_PAD_X = 12;
 const BUTTON_PAD_Y = 6;
@@ -43,8 +71,8 @@ export type Comm = {
 export type ToggleComm = Comm & { value: boolean };
 export type SliderComm = Comm & { value: number };
 
-// "auto" = neutral palette (BG → BG_HOT → BG_ACTIVE) with hot/active blend
-// "accent" = green palette (ACCENT → ACCENT_HOT) with hot blend
+// "auto" = neutral palette (theme.bg → theme.bgHot → theme.bgActive) with hot/active blend
+// "accent" = green palette (theme.accent → theme.accentHot) with hot blend
 // any other string = fixed CSS color, no animation
 export type BgSpec = "auto" | "accent" | (string & {});
 
@@ -291,7 +319,7 @@ export function measureText(
   text: string,
   font?: string,
 ): { width: number; height: number } {
-  const m = textWH(text, font ?? top(fontStack) ?? FONT);
+  const m = textWH(text, font ?? top(fontStack) ?? theme.font);
   return { width: m.w, height: m.h };
 }
 
@@ -440,7 +468,7 @@ export function frameStart(c: CanvasRenderingContext2D, deltaMs: number) {
   stack = [];
   frameIdx++;
   focusedIsEditable = false;
-  c.font = FONT;
+  c.font = theme.font;
   c.textBaseline = "middle";
 
   // runs are rebuilt every frame in document draw order; freeze this frame's
@@ -658,7 +686,7 @@ export function frameEnd() {
 
 function makeNode(opts: NodeOpts): Node {
   const hasXY = opts.x !== undefined || opts.y !== undefined;
-  const font = opts.font ?? top(fontStack) ?? FONT;
+  const font = opts.font ?? top(fontStack) ?? theme.font;
   let intrinsicW = 0;
   let intrinsicH = 0;
   if (opts.fillBar !== undefined) {
@@ -1017,7 +1045,7 @@ export function textInput(
   const s = getState(id);
   const isFocused = focused === id;
   if (isFocused) focusedIsEditable = true;
-  const font = opts.font ?? top(fontStack) ?? FONT;
+  const font = opts.font ?? top(fontStack) ?? theme.font;
   const pad = normPadding(opts.padding ?? { l: 10, r: 10, t: 7, b: 7 });
 
   let next = isFocused ? editText(value, s, id, false) : value;
@@ -1122,7 +1150,7 @@ export function select<T extends string>(
     },
     () => {
       const empty = !value;
-      withTextColor(empty ? "#9ca3af" : (opts.textColor ?? FG), () => {
+      withTextColor(empty ? "#9ca3af" : (opts.textColor ?? theme.fg), () => {
         label(empty ? "Select…" : value);
       });
       spacer({ width: "grow" });
@@ -1191,7 +1219,7 @@ export function textArea(
   const s = getState(id);
   const isFocused = focused === id;
   if (isFocused) focusedIsEditable = true;
-  const font = opts.font ?? top(fontStack) ?? FONT;
+  const font = opts.font ?? top(fontStack) ?? theme.font;
 
   const next = isFocused ? editText(value, s, id, true) : value;
 
@@ -1496,6 +1524,35 @@ export function label(text: string, opts: NodeOpts = {}): void {
   node({ ...opts, text, textAlign: opts.textAlign ?? "left" });
 }
 
+// Text with a semantic preset (size/weight/color from the theme), so you don't
+// hand-write font strings + colors everywhere. opts override anything.
+export type TextPreset = "h1" | "h2" | "h3" | "body" | "caption" | "code";
+function fontFamily(f: string): string {
+  return f.replace(/^\s*(bold\s+|italic\s+)*[\d.]+px\s+/i, "").trim();
+}
+export function text(
+  str: string,
+  preset: TextPreset = "body",
+  opts: NodeOpts = {},
+): void {
+  const sans = fontFamily(theme.font);
+  const mono = fontFamily(theme.fontMono);
+  const map: Record<TextPreset, [string, string]> = {
+    h1: [`bold 28px ${sans}`, theme.fg],
+    h2: [`bold 18px ${sans}`, theme.fg],
+    h3: [`bold 14px ${sans}`, theme.fg],
+    body: [`14px ${sans}`, theme.fg],
+    caption: [`12px ${sans}`, theme.muted],
+    code: [`13px ${mono}`, theme.fg],
+  };
+  const [font, color] = map[preset];
+  label(str, {
+    ...opts,
+    font: opts.font ?? font,
+    textColor: opts.textColor ?? color,
+  });
+}
+
 export function button(labelText: string, opts: NodeOpts = {}): Comm {
   return node({
     ...opts,
@@ -1520,7 +1577,7 @@ export function toggle(
     clickable: true,
     bg: opts.bg ?? (value ? "accent" : "auto"),
     text: labelText,
-    textColor: opts.textColor ?? (value ? ACCENT_FG : undefined),
+    textColor: opts.textColor ?? (value ? theme.accentFg : undefined),
     textAlign: opts.textAlign ?? "center",
     press: opts.press ?? true,
   });
@@ -1907,10 +1964,10 @@ function setRectPath(
 
 function resolveBg(spec: BgSpec, hotT: number, activeT: number): string {
   if (spec === "auto") {
-    return lerpColor(lerpColor(BG, BG_HOT, hotT), BG_ACTIVE, activeT);
+    return lerpColor(lerpColor(theme.bg, theme.bgHot, hotT), theme.bgActive, activeT);
   }
   if (spec === "accent") {
-    return lerpColor(ACCENT, ACCENT_HOT, hotT);
+    return lerpColor(theme.accent, theme.accentHot, hotT);
   }
   return spec;
 }
@@ -1936,7 +1993,7 @@ function recordTextRun(
       ctx.font = font;
       const preW = ctx.measureText(text.slice(0, cs)).width;
       const selW = ctx.measureText(text.slice(cs, ce)).width;
-      ctx.fillStyle = SELECTION_BG;
+      ctx.fillStyle = theme.selection;
       ctx.fillRect(x + preW, y - h / 2, selW, h);
     }
   }
@@ -2076,13 +2133,13 @@ function drawNode(node: Node, scrollAccumY: number, scrollAccumX = 0) {
   }
 
   if (node.fillBar !== undefined) {
-    // track defaults to the dark TRACK but follows the node's bg when themed,
+    // track defaults to the dark theme.track but follows the node's bg when themed,
     // and the fill can be themed via fillColor — so a light/custom slider keeps
     // readable contrast instead of always getting the neutral dark fill
     ctx.fillStyle =
       node.bg !== undefined && node.bg !== "auto" && node.bg !== "accent"
         ? (node.bg as string)
-        : TRACK;
+        : theme.track;
     setRectPath(rx, ry, rw, rh, node.radius);
     ctx.fill();
     ctx.fillStyle = node.fillColor ?? resolveBg("auto", hotT, activeT);
@@ -2116,7 +2173,7 @@ function drawNode(node: Node, scrollAccumY: number, scrollAccumX = 0) {
   // keyboard focus ring — soft animated halo + crisp inner stroke. Color is
   // configurable (focusRing opt / withFocusRing); "none" disables it. Drawn
   // while focusT > 0 so it fades in and out instead of popping.
-  const ring = node.focusRing ?? FOCUS_RING;
+  const ring = node.focusRing ?? theme.focusRing;
   if (node.id && ring !== "none" && (s?.focusT ?? 0) > 0.01) {
     const t = s!.focusT;
     const off = 3;
@@ -2167,7 +2224,7 @@ function drawNode(node: Node, scrollAccumY: number, scrollAccumX = 0) {
       const selW = ctx.measureText(
         node.text.slice(node.selStart, node.selEnd),
       ).width;
-      ctx.fillStyle = SELECTION_BG;
+      ctx.fillStyle = theme.selection;
       ctx.fillRect(textLeft + preW, ry + rh / 2 - fh / 2, selW, fh);
     }
 
@@ -2193,14 +2250,14 @@ function drawNode(node: Node, scrollAccumY: number, scrollAccumX = 0) {
           recordTextRun(node.wrappedLines[i]!, tx, startY + i * lineH, lineH, node.font);
         }
       }
-      ctx.fillStyle = node.textColor ?? FG;
+      ctx.fillStyle = node.textColor ?? theme.fg;
       ctx.textAlign = node.textAlign;
       for (let i = 0; i < node.wrappedLines.length; i++) {
         ctx.fillText(node.wrappedLines[i]!, tx, startY + i * lineH);
       }
     } else {
       if (selectable) recordTextRun(node.text, tx, ry + rh / 2, fh, node.font);
-      ctx.fillStyle = node.textColor ?? FG;
+      ctx.fillStyle = node.textColor ?? theme.fg;
       ctx.textAlign = node.textAlign;
       ctx.fillText(node.text, tx, ry + rh / 2);
     }
@@ -2223,7 +2280,7 @@ function drawNode(node: Node, scrollAccumY: number, scrollAccumX = 0) {
       if (sinceMove < 450 || blinkOn) {
         const caretX = Math.round(textLeft + drawXoff);
         const caretY = ry + rh / 2 - fh / 2;
-        ctx.fillStyle = node.textColor ?? FG;
+        ctx.fillStyle = node.textColor ?? theme.fg;
         ctx.fillRect(caretX, caretY, 1.5, fh);
       }
     }
