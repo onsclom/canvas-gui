@@ -255,6 +255,15 @@ const heightStack: SizeSpec[] = [];
 const fontStack: string[] = [];
 const focusRingStack: string[] = [];
 
+// id scope: prefixes widget ids so repeated components (rows of a list, cards
+// in a loop) don't collide without hand-threading unique ids everywhere.
+const idScopeStack: string[] = [];
+// prefix a raw id with the active scope. Widgets that do their own id
+// bookkeeping (getState, sub-ids) call this; makeNode applies it to opts.id.
+function scopeId(id: string): string {
+  return idScopeStack.length ? idScopeStack[idScopeStack.length - 1]! + id : id;
+}
+
 // === page-wide text selection (HTML-like) ===
 // Every plain (left-aligned, non-clickable) text line drawn this frame is
 // recorded as a TextRun in document order. A drag over those runs builds a
@@ -704,7 +713,7 @@ function makeNode(opts: NodeOpts): Node {
   }
 
   return {
-    id: opts.id ?? "",
+    id: opts.id ? scopeId(opts.id) : "",
     width: opts.width ?? top(widthStack) ?? "fit",
     height: opts.height ?? top(heightStack) ?? "fit",
     absX: opts.x ?? 0,
@@ -1041,7 +1050,8 @@ export function textInput(
   value: string,
   opts: NodeOpts & { placeholder?: string } = {},
 ): TextInputComm {
-  const id = opts.id ?? "text-input";
+  const rawId = opts.id ?? "text-input";
+  const id = scopeId(rawId);
   const s = getState(id);
   const isFocused = focused === id;
   if (isFocused) focusedIsEditable = true;
@@ -1096,7 +1106,7 @@ export function textInput(
     padding: { l: 10, r: 10, t: 7, b: 7 },
     height: 32,
     ...opts,
-    id,
+    id: rawId,
     clickable: true,
     cursor: opts.cursor ?? "text",
     bg: opts.bg ?? "#0b0f17",
@@ -1127,7 +1137,8 @@ export function select<T extends string>(
   options: readonly T[],
   opts: NodeOpts = {},
 ): SelectComm<T> {
-  const id = opts.id ?? "select";
+  const rawId = opts.id ?? "select";
+  const id = scopeId(rawId);
   const isOpen = openSelect === id;
 
   // trigger — a horizontal row with the value on the left and a chevron
@@ -1136,7 +1147,7 @@ export function select<T extends string>(
     {
       height: 32,
       ...opts,
-      id,
+      id: rawId,
       clickable: true,
       bg: opts.bg ?? "auto",
       border: opts.border,
@@ -1186,7 +1197,7 @@ export function select<T extends string>(
           const opt = options[i]!;
           const isCurrent = opt === value;
           const c = button(opt, {
-            id: `${id}#opt-${i}`,
+            id: `${rawId}#opt-${i}`,
             width: "grow",
             height: itemH,
             radius: 4,
@@ -1215,7 +1226,8 @@ export function textArea(
   value: string,
   opts: NodeOpts & { placeholder?: string } = {},
 ): TextInputComm {
-  const id = opts.id ?? "text-area";
+  const rawId = opts.id ?? "text-area";
+  const id = scopeId(rawId);
   const s = getState(id);
   const isFocused = focused === id;
   if (isFocused) focusedIsEditable = true;
@@ -1234,7 +1246,7 @@ export function textArea(
       padding: { l: 10, r: 10, t: 7, b: 7 },
       gap: 1,
       ...opts,
-      id,
+      id: rawId,
       clickable: true,
       cursor: opts.cursor ?? "text",
       bg: opts.bg ?? "#0b0f17",
@@ -1357,7 +1369,8 @@ export type WindowOpts = NodeOpts & {
 export type WindowComm = Comm & { closeClicked: boolean };
 
 export function window(opts: WindowOpts, fn: () => void): WindowComm {
-  const id = opts.id ?? "window";
+  const rawId = opts.id ?? "window";
+  const id = scopeId(rawId);
   const s = getState(id);
   if (s.winW === 0 && s.winH === 0) {
     s.winX = opts.defaultX ?? 80;
@@ -1368,8 +1381,12 @@ export function window(opts: WindowOpts, fn: () => void): WindowComm {
   const minW = opts.minW ?? 200;
   const minH = opts.minH ?? 120;
 
-  const dragId = `${id}#drag`;
-  const resizeId = `${id}#resize`;
+  // raw sub-ids are passed to widgets (makeNode scopes them); the scoped forms
+  // are what `active`/cache use, so they match the nodes' final ids
+  const dragRaw = `${rawId}#drag`;
+  const resizeRaw = `${rawId}#resize`;
+  const dragId = scopeId(dragRaw);
+  const resizeId = scopeId(resizeRaw);
 
   // live drag — title bar held + mouse moved
   const ds = cache.get(dragId);
@@ -1408,7 +1425,7 @@ export function window(opts: WindowOpts, fn: () => void): WindowComm {
       height: s.winH,
       align: "stretch",
       ...opts,
-      id,
+      id: rawId,
       bg: opts.bg ?? "#1f2937",
       border: opts.border ?? "rgba(255,255,255,0.18)",
       radius: opts.radius ?? 0,
@@ -1419,7 +1436,7 @@ export function window(opts: WindowOpts, fn: () => void): WindowComm {
       // title bar (drag handle) — no radius, full-width
       row(
         {
-          id: dragId,
+          id: dragRaw,
           width: "grow",
           height: 26,
           padding: { l: 10, r: 6 },
@@ -1437,7 +1454,7 @@ export function window(opts: WindowOpts, fn: () => void): WindowComm {
             spacer({ width: "grow" });
             if (
               button("✕", {
-                id: `${id}#close`,
+                id: `${rawId}#close`,
                 width: 20,
                 height: 18,
                 bg: "transparent",
@@ -1475,7 +1492,7 @@ export function window(opts: WindowOpts, fn: () => void): WindowComm {
         },
         () => {
           button("⇲", {
-            id: resizeId,
+            id: resizeRaw,
             width: 12,
             height: 12,
             bg: "transparent",
@@ -1597,7 +1614,8 @@ export function slider(
   max: number,
   opts: SliderOpts = {},
 ): SliderComm {
-  const id = opts.id ?? labelText;
+  const rawId = opts.id ?? labelText;
+  const id = scopeId(rawId);
   const precision = opts.precision ?? 2;
   const step = opts.step;
   const suffix = opts.suffix ?? "";
@@ -1624,7 +1642,7 @@ export function slider(
   const display = labelText ? `${labelText}: ${formatted}` : formatted;
   const c = node({
     ...opts,
-    id,
+    id: rawId,
     clickable: true,
     cursor: opts.cursor ?? "ew-resize",
     fillBar: t,
@@ -1690,6 +1708,12 @@ export function popFocusRing() {
 }
 export function withFocusRing<T>(c: string, fn: () => T): T {
   return withStack(focusRingStack, c, fn);
+}
+// Prefix every widget id created inside fn with `prefix:` — so a component you
+// render in a loop doesn't need hand-unique ids. Nesting composes the prefixes.
+export function withIdScope<T>(prefix: string, fn: () => T): T {
+  const cur = idScopeStack.length ? idScopeStack[idScopeStack.length - 1]! : "";
+  return withStack(idScopeStack, `${cur}${prefix}:`, fn);
 }
 
 // === programmatic focus ===
