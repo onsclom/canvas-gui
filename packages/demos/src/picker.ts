@@ -20,6 +20,7 @@ import { tick as kanbanTick } from "./demos/kanban";
 import { tick as nodegraphTick } from "./demos/nodegraph";
 import { tick as settingsTick } from "./demos/settings";
 import { tick as paintTick } from "./demos/paint";
+import { tick as tilemapTick } from "./demos/tilemap";
 
 type DemoKey =
   | "docs"
@@ -42,7 +43,8 @@ type DemoKey =
   | "kanban"
   | "nodegraph"
   | "settings"
-  | "paint";
+  | "paint"
+  | "tilemap";
 
 const demos: Record<
   DemoKey,
@@ -69,6 +71,7 @@ const demos: Record<
   nodegraph: { name: "Nodes", tick: nodegraphTick },
   settings: { name: "Settings", tick: settingsTick },
   paint: { name: "Paint+", tick: paintTick },
+  tilemap: { name: "Tilemap", tick: tilemapTick },
 };
 
 const keys: DemoKey[] = [
@@ -93,6 +96,7 @@ const keys: DemoKey[] = [
   "nodegraph",
   "settings",
   "paint",
+  "tilemap",
 ];
 
 // deep-linking: the current demo is reflected in the URL hash (#docs, #kitchen,
