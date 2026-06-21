@@ -66,10 +66,12 @@ See `packages/canvas-gui/README.md` for the per-package overview.
 
 - A working Bun workspace
 - The library (`packages/canvas-gui`)
-- 14 demos (`packages/demos`), including a literal docs page that documents
-  every widget, the [7GUIs](https://eugenkiss.github.io/7guis/) benchmark, a
-  performance bench, a physics playground, a generative fractal tree, and a
-  small desktop environment (canvasOS)
+- 22 demos (`packages/demos`): a literal docs page, the
+  [7GUIs](https://eugenkiss.github.io/7guis/) benchmark, a performance bench, a
+  physics playground, a generative fractal tree, a desktop environment
+  (canvasOS), a live charts dashboard, a chat app, a 50k-row virtualized data
+  grid, a kanban board, a node-graph editor, a settings page, a paint app, and
+  a tilemap editor
 - A landing page (`packages/landing`)
 - This README + a `vendor` script
 

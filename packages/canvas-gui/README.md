@@ -60,24 +60,30 @@ so you can hack on it freely.
 The full API is documented inline in the `Docs` demo (`packages/demos`).
 Quick tour:
 
-- **Containers**: `row`, `col`, `box`
-- **Widgets**: `button`, `toggle`, `slider`, `label`, `spacer`,
-  `textInput`, `textArea`, `select`
-- **Layout helpers**: `withFont`, `withTextColor`, `withWidth`,
-  `withHeight`, `withFocusRing`
-- **Floating layers**: `modal`, `window`
+- **Containers**: `row`, `col`, `node`, `grid`
+- **Widgets**: `button`, `toggle`, `slider`, `label`, `text`, `spacer`,
+  `textInput`, `textArea`, `select`, `checkbox`, `radioGroup`, `segmented`,
+  `tabs`, `numberInput`, `progress`, `tooltip`
+- **Custom drawing**: `canvas(opts, (ctx, rect) => …)` — draw anything (charts,
+  game viewports, freehand) in z-order, clipped to the box. `measureText` too.
+- **Layout helpers**: `withFont`, `withTextColor`, `withWidth`, `withHeight`,
+  `withFocusRing`, `withIdScope` (collision-free ids for repeated components)
+- **Theming**: `setTheme({...})` + the `theme` object drive all built-in
+  colors/fonts/radius; `text(str, 'h1'|…)` presets.
+- **Floating layers**: `modal`, `window` (closable/draggable/resizable)
+- **Drag & drop**: `beginDrag(payload)` / `dropZone(comm)` / `isDragging`
+- **Scrolling**: `scrollable: true` (both axes); `scrollTo` / `scrollToBottom`
+  / `scrollState` for programmatic control.
 - **Animation**: `smooth(current, target, decay)` — framerate-independent
   exponential decay. Buttons depress while held; the caret and focus ring
   animate too.
 - **Text editing**: `textInput` / `textArea` have a full caret + selection
   model — Shift to extend, Ctrl for word moves, Ctrl+A/C/X/V, double/triple
   click and drag to select, and horizontal scroll for overflow.
-- **Scrolling**: `scrollable: true` clips overflow and scrolls whichever
-  axis overflows (vertical wheel, Shift+wheel / trackpad for horizontal).
 - **Text selection**: plain labels are selectable like a web page; drag to
   select, Ctrl+C to copy. Toggle with `setTextSelectable(false)`.
-- **Command buffer**: `cmd(name, args?)` / `onCommand(handler)` for
-  deferred state mutations
+- **State**: no event system — mutate your state where the event happens
+  (`if (button("+").clicked) n++`); the next frame rebuilds from it.
 
 ## Files
 
