@@ -64,6 +64,8 @@ export type Comm = {
   pressed: boolean;
   released: boolean;
   clicked: boolean;
+  doubleClicked: boolean;
+  rightClicked: boolean;
   dragging: boolean;
   dragDelta: { x: number; y: number };
 };
@@ -203,6 +205,8 @@ type WidgetState = {
   // multi-click tracking (double = word, triple = all)
   lastClickMs: number;
   clickCount: number;
+  // last click time for generic widget double-click detection
+  lastWidgetClickMs: number;
   // id of the window subtree this widget was drawn under (null = not inside one)
   ownerWindow: string | null;
   lastTouched: number;
@@ -247,6 +251,38 @@ const cache = new Map<string, WidgetState>();
 const pendingClicks = new Set<string>();
 const pendingPresses = new Set<string>();
 const pendingReleases = new Set<string>();
+const pendingRightClicks = new Set<string>();
+
+// === drag and drop ===
+// A lightweight payload carrier: a source calls beginDrag(payload) while held,
+// and a drop region calls dropZone(comm) to learn if a drop landed on it.
+let dragData: { payload: unknown } | null = null;
+export function beginDrag(payload: unknown): void {
+  if (!dragData) dragData = { payload };
+}
+export function isDragging(): boolean {
+  return dragData !== null;
+}
+export function dragPayload(): unknown {
+  return dragData?.payload;
+}
+// Returns whether a drag is currently over this region and whether it was
+// dropped here this frame (with the payload). Call with a container's Comm.
+export function dropZone(comm: Comm): {
+  over: boolean;
+  dropped: boolean;
+  payload: unknown;
+} {
+  const over =
+    dragData !== null &&
+    mouse.onCanvas &&
+    mouse.x >= comm.rect.x &&
+    mouse.x < comm.rect.x + comm.rect.w &&
+    mouse.y >= comm.rect.y &&
+    mouse.y < comm.rect.y + comm.rect.h;
+  const dropped = over && mouse.justLeftReleased;
+  return { over, dropped, payload: dragData?.payload };
+}
 const deferredAbs: Node[] = [];
 
 const textColorStack: string[] = [];
@@ -424,6 +460,7 @@ function getState(id: string): WidgetState {
       selAnchor: 0,
       inputScrollX: 0,
       lastClickMs: 0,
+      lastWidgetClickMs: 0,
       clickCount: 0,
       ownerWindow: null,
       lastTouched: frameIdx,
@@ -444,6 +481,8 @@ const EMPTY_COMM: Comm = Object.freeze({
   pressed: false,
   released: false,
   clicked: false,
+  doubleClicked: false,
+  rightClicked: false,
   dragging: false,
   dragDelta: Object.freeze({ x: 0, y: 0 }),
 }) as unknown as Comm;
@@ -457,6 +496,15 @@ function widgetComm(id: string): Comm {
   if (pressed) pendingPresses.delete(id);
   const released = pendingReleases.has(id);
   if (released) pendingReleases.delete(id);
+  const rightClicked = pendingRightClicks.has(id);
+  if (rightClicked) pendingRightClicks.delete(id);
+  // double-click: two clicks on this widget within 400ms
+  let doubleClicked = false;
+  if (clicked) {
+    const now = performance.now();
+    if (now - s.lastWidgetClickMs < 400) doubleClicked = true;
+    s.lastWidgetClickMs = now;
+  }
   const isActive = active === id;
   return {
     rect: s.rect,
@@ -465,6 +513,8 @@ function widgetComm(id: string): Comm {
     pressed,
     released,
     clicked,
+    doubleClicked,
+    rightClicked,
     dragging: isActive && mouse.leftClickDown,
     dragDelta: { x: mouse.x - s.pressX, y: mouse.y - s.pressY },
   };
@@ -682,7 +732,12 @@ export function frameEnd() {
     const s = getState(active);
     if (hit(s.rect)) pendingClicks.add(active);
   }
+  // right-click goes to the hovered widget
+  if (mouse.justRightClicked && hot !== null) pendingRightClicks.add(hot);
   if (!mouse.leftClickDown) active = null;
+  // a drag ends when the button is released; clear it after this frame's build
+  // has had a chance to resolve drops
+  if (!mouse.leftClickDown) dragData = null;
 
   for (const [id, s] of cache) {
     if (s.lastTouched < frameIdx - CACHE_STALE_FRAMES) cache.delete(id);
