@@ -1711,6 +1711,230 @@ export function slider(
   return { ...c, value: val };
 }
 
+// === more widgets ===
+
+// Checkbox: a box + label; the whole row toggles. Returns the new value.
+export function checkbox(
+  labelText: string,
+  value: boolean,
+  opts: NodeOpts = {},
+): ToggleComm {
+  const c = row(
+    {
+      padding: { l: 4, r: 8, t: 4, b: 4 },
+      gap: 8,
+      ...opts,
+      id: opts.id ?? labelText,
+      clickable: true,
+      bg: opts.bg ?? "rgba(255,255,255,0)",
+      align: "center",
+    },
+    () => {
+      node({
+        width: 18,
+        height: 18,
+        radius: 4,
+        bg: value ? "accent" : "#0b0f17",
+        border: value ? undefined : "#4b5563",
+        text: value ? "✓" : "",
+        textColor: theme.accentFg,
+        textAlign: "center",
+        font: "bold 13px system-ui, sans-serif",
+      });
+      label(labelText, { textColor: opts.textColor });
+    },
+  );
+  return { ...c, value: c.clicked ? !value : value };
+}
+
+// Radio group: one selectable option from a list. Vertical by default.
+export function radioGroup<T extends string>(
+  value: T,
+  options: readonly T[],
+  opts: NodeOpts = {},
+): { value: T } {
+  let chosen = value;
+  const gid = opts.id ?? "radio";
+  node({ ...opts, dir: opts.dir ?? "col", gap: opts.gap ?? 6, align: "stretch" }, () => {
+    for (const opt of options) {
+      const sel = opt === value;
+      const c = row(
+        { id: `${gid}-${opt}`, clickable: true, gap: 8, align: "center", padding: { t: 3, b: 3, l: 2, r: 2 } },
+        () => {
+          node({
+            width: 16,
+            height: 16,
+            radius: 8,
+            bg: "#0b0f17",
+            border: sel ? theme.accent : "#4b5563",
+            text: sel ? "●" : "",
+            textColor: theme.accent,
+            textAlign: "center",
+            font: "12px system-ui, sans-serif",
+          });
+          label(opt);
+        },
+      );
+      if (c.clicked) chosen = opt;
+    }
+  });
+  return { value: chosen };
+}
+
+// Segmented control: a pill of mutually-exclusive buttons.
+export function segmented<T extends string>(
+  value: T,
+  options: readonly T[],
+  opts: NodeOpts = {},
+): { value: T } {
+  let chosen = value;
+  const gid = opts.id ?? "seg";
+  row(
+    {
+      padding: 3,
+      gap: 3,
+      ...opts,
+      bg: opts.bg ?? "#0b0f17",
+      radius: opts.radius ?? 7,
+      align: "stretch",
+    },
+    () => {
+      for (const opt of options) {
+        const sel = opt === value;
+        if (
+          button(opt, {
+            id: `${gid}-${opt}`,
+            width: "grow",
+            height: opts.height ?? 28,
+            radius: 5,
+            bg: sel ? "accent" : "rgba(255,255,255,0)",
+            textColor: sel ? theme.accentFg : theme.muted,
+            font: "13px system-ui, sans-serif",
+            press: false,
+          }).clicked
+        ) {
+          chosen = opt;
+        }
+      }
+    },
+  );
+  return { value: chosen };
+}
+
+// Tabs: a row of labels with an underline under the active one.
+export function tabs<T extends string>(
+  value: T,
+  options: readonly T[],
+  opts: NodeOpts = {},
+): { value: T } {
+  let chosen = value;
+  const gid = opts.id ?? "tabs";
+  row({ ...opts, gap: opts.gap ?? 4, align: "end" }, () => {
+    for (const opt of options) {
+      const sel = opt === value;
+      col({ gap: 4, align: "stretch" }, () => {
+        if (
+          button(opt, {
+            id: `${gid}-${opt}`,
+            height: 30,
+            radius: 0,
+            bg: "rgba(255,255,255,0)",
+            textColor: sel ? theme.fg : theme.muted,
+            font: "bold 13px system-ui, sans-serif",
+            padding: { l: 10, r: 10, t: 0, b: 0 },
+            press: false,
+          }).clicked
+        ) {
+          chosen = opt;
+        }
+        node({ width: "grow", height: 2, radius: 1, bg: sel ? theme.accent : "rgba(255,255,255,0)" });
+      });
+    }
+  });
+  return { value: chosen };
+}
+
+export type NumberOpts = NodeOpts & { min?: number; max?: number; step?: number };
+
+// Number stepper: − [value] +. Returns the new value.
+export function numberInput(value: number, opts: NumberOpts = {}): Comm & { value: number } {
+  const step = opts.step ?? 1;
+  const min = opts.min ?? -Infinity;
+  const max = opts.max ?? Infinity;
+  const id = opts.id ?? "num";
+  let v = value;
+  const clampN = (x: number) => Math.max(min, Math.min(max, x));
+  const c = row({ ...opts, id, gap: 4, align: "center" }, () => {
+    if (button("−", { id: `${id}-dec`, width: 30, height: 30, radius: 5, font: "bold 16px system-ui" }).clicked) {
+      v = clampN(v - step);
+    }
+    node({
+      width: opts.width === undefined || typeof opts.width !== "number" ? 64 : opts.width,
+      height: 30,
+      bg: "#0b0f17",
+      border: "#374151",
+      radius: 5,
+      text: Number.isInteger(v) ? String(v) : v.toFixed(2),
+      textAlign: "center",
+      font: "13px ui-monospace, monospace",
+    });
+    if (button("+", { id: `${id}-inc`, width: 30, height: 30, radius: 5, font: "bold 16px system-ui" }).clicked) {
+      v = clampN(v + step);
+    }
+  });
+  return { ...c, value: v };
+}
+
+// Progress bar (0..1), non-interactive.
+export function progress(value: number, opts: NodeOpts = {}): void {
+  node({
+    width: "grow",
+    height: 8,
+    ...opts,
+    bg: opts.bg ?? theme.track,
+    radius: opts.radius ?? 4,
+    fillBar: clamp(value, 0, 1),
+    fillColor: opts.fillColor ?? theme.accent,
+  });
+}
+
+// Tooltip: draw a floating label near the cursor while comm is hovered.
+export function tooltip(comm: Comm, text: string): void {
+  if (!comm.hovering) return;
+  node({
+    x: mouse.x + 12,
+    y: mouse.y + 16,
+    bg: "#0b0f17",
+    border: "rgba(255,255,255,0.18)",
+    radius: 5,
+    padding: { l: 8, r: 8, t: 5, b: 5 },
+    text,
+    textColor: theme.fg,
+    font: "12px system-ui, sans-serif",
+    zOrder: 100000,
+  });
+}
+
+// Grid: lay out cell render-functions in `cols` equal columns.
+export function grid(
+  opts: NodeOpts & { cols: number },
+  cells: Array<() => void>,
+): void {
+  const cols = Math.max(1, opts.cols);
+  const gap = opts.gap ?? 8;
+  col({ ...opts, gap, align: opts.align ?? "stretch" }, () => {
+    for (let i = 0; i < cells.length; i += cols) {
+      row({ width: "grow", gap }, () => {
+        for (let j = 0; j < cols; j++) {
+          const cell = cells[i + j];
+          if (cell) col({ width: "grow" }, cell);
+          else spacer({ width: "grow" });
+        }
+      });
+    }
+  });
+}
+
 // === style stacks ===
 
 function withStack<S, T>(s: S[], v: S, fn: () => T): T {
