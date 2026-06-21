@@ -48,6 +48,11 @@ export function tick(ctx: CanvasRenderingContext2D, _dt: number) {
   }
   state.followerX = ui.smooth(state.followerX, state.followerTargetX, 8);
   state.followerY = ui.smooth(state.followerY, state.followerTargetY, 8);
+  // hue lives on a circle: unwrap so we always blend the short way around the
+  // wheel (e.g. 350° → 10° goes through 0°, not all the way back through 180°)
+  const hueDiff = state.hueTarget - state.hue;
+  if (hueDiff > 180) state.hue += 360;
+  else if (hueDiff < -180) state.hue -= 360;
   state.hue = ui.smooth(state.hue, state.hueTarget, 6);
 
   ui.col(
@@ -248,12 +253,13 @@ export function tick(ctx: CanvasRenderingContext2D, _dt: number) {
             }
           }
         });
+        const shownHue = ((state.hue % 360) + 360) % 360;
         ui.node({
           width: "grow",
           height: 80,
-          bg: `hsl(${state.hue.toFixed(1)},70%,55%)`,
+          bg: `hsl(${shownHue.toFixed(1)},70%,55%)`,
           radius: 8,
-          text: `hue ${state.hue.toFixed(1)}°`,
+          text: `hue ${shownHue.toFixed(1)}°`,
           textColor: "#fff",
           textAlign: "center",
           font: "bold 18px system-ui, sans-serif",

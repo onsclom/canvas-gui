@@ -777,7 +777,8 @@ function caretFromX(text: string, font: string, localX: number): number {
   for (let i = 0; i <= text.length; i++) {
     const w = ctx.measureText(text.slice(0, i)).width;
     if (w >= localX) {
-      const prevW = i > 0 ? ctx.measureText(text.slice(0, i - 1)).width : 0;
+      if (i === 0) return 0; // clicked at/before the start — never go negative
+      const prevW = ctx.measureText(text.slice(0, i - 1)).width;
       return Math.abs(w - localX) < Math.abs(localX - prevW) ? i : i - 1;
     }
   }
@@ -955,16 +956,22 @@ function placeCaret(
   }
 }
 
-// single-line input: map mouse x → caret index, then place it
+// single-line input: map mouse x → caret index, then place it. Mirrors the
+// draw-time textLeft math so centered fields position the caret correctly.
 function inputMouse(
   next: string,
   s: WidgetState,
   font: string,
   padL: number,
   isClick: boolean,
+  centered = false,
 ) {
-  const localX = mouse.x - (s.rect.x + padL) + s.inputScrollX;
-  placeCaret(next, s, caretFromX(next, font, localX), isClick);
+  let textLeft = s.rect.x + padL - s.inputScrollX;
+  if (centered && ctx) {
+    ctx.font = font;
+    textLeft = s.rect.x + s.rect.w / 2 - ctx.measureText(next).width / 2;
+  }
+  placeCaret(next, s, caretFromX(next, font, mouse.x - textLeft), isClick);
 }
 
 // multi-line input: map mouse (x,y) → caret index across lines, then place it
@@ -995,17 +1002,25 @@ export function textInput(
   const pad = normPadding(opts.padding ?? { l: 10, r: 10, t: 7, b: 7 });
 
   let next = isFocused ? editText(value, s, id, false) : value;
+  const centered = (opts.textAlign ?? "left") === "center";
 
   // mouse: focus/blur + caret placement + drag/multi-click selection
   if (mouse.justLeftClicked) {
     if (hot === id) {
       focused = id;
-      inputMouse(next, s, font, pad.l, true);
+      inputMouse(next, s, font, pad.l, true, centered);
     } else if (isFocused) {
       focused = null;
     }
-  } else if (active === id && mouse.leftClickDown && isFocused) {
-    inputMouse(next, s, font, pad.l, false);
+  } else if (
+    active === id &&
+    mouse.leftClickDown &&
+    isFocused &&
+    Math.hypot(mouse.x - s.pressX, mouse.y - s.pressY) > 3
+  ) {
+    // only extend the selection once the cursor actually moves from the press
+    // point — a stationary press-hold must not keep re-seeding the caret
+    inputMouse(next, s, font, pad.l, false, centered);
   }
 
   const empty = next.length === 0;
@@ -1227,7 +1242,12 @@ export function textArea(
     } else if (isFocused) {
       focused = null;
     }
-  } else if (active === id && mouse.leftClickDown && isFocused) {
+  } else if (
+    active === id &&
+    mouse.leftClickDown &&
+    isFocused &&
+    Math.hypot(mouse.x - s.pressX, mouse.y - s.pressY) > 3
+  ) {
     textAreaMouse(next, s, font, pad, false);
   }
 
@@ -2080,6 +2100,13 @@ function drawNode(node: Node, scrollAccumY: number, scrollAccumX = 0) {
     ctx.font = node.font;
     const fh = fontHeight(node.font);
 
+    // left edge where glyphs begin — accounts for center alignment so caret and
+    // selection line up with the text, not the padding box
+    const textLeft =
+      node.textAlign === "center"
+        ? rx + rw / 2 - ctx.measureText(node.text).width / 2
+        : rx + node.padding.l - scrollX;
+
     // selection highlight (single-line/text nodes; behind the glyphs)
     if (
       node.selStart !== undefined &&
@@ -2092,12 +2119,7 @@ function drawNode(node: Node, scrollAccumY: number, scrollAccumX = 0) {
         node.text.slice(node.selStart, node.selEnd),
       ).width;
       ctx.fillStyle = SELECTION_BG;
-      ctx.fillRect(
-        rx + node.padding.l + preW - scrollX,
-        ry + rh / 2 - fh / 2,
-        selW,
-        fh,
-      );
+      ctx.fillRect(textLeft + preW, ry + rh / 2 - fh / 2, selW, fh);
     }
 
     // plain left-aligned text outside any clickable subtree is page-selectable:
@@ -2150,7 +2172,7 @@ function drawNode(node: Node, scrollAccumY: number, scrollAccumX = 0) {
       const sinceMove = s ? performance.now() - s.caretShownAt : 1e9;
       const blinkOn = Math.floor(performance.now() / 530) % 2 === 0;
       if (sinceMove < 450 || blinkOn) {
-        const caretX = Math.round(rx + node.padding.l + drawXoff - scrollX);
+        const caretX = Math.round(textLeft + drawXoff);
         const caretY = ry + rh / 2 - fh / 2;
         ctx.fillStyle = node.textColor ?? FG;
         ctx.fillRect(caretX, caretY, 1.5, fh);
